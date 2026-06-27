@@ -1,0 +1,16 @@
+---
+# Override for multi-app VMs where host nginx already owns 80/443.
+#
+# Usage:
+#   COMPOSE_FILE=docker-compose.yaml:docker-compose.vm.yaml docker compose up --build -d
+#   — or copy .env.vm.example values into .env and run docker compose up --build -d
+#
+# Access (before Cloudflare / host nginx):
+#   curl -k https://127.0.0.1:8843/health   # from the VM
+#   ssh -L 8843:127.0.0.1:8843 ubuntu@<vm-ip>   # then https://localhost:8843 from your PC
+
+services:
+  web:
+    ports:
+      - "127.0.0.1:8880:80"
+      - "127.0.0.1:8843:443"

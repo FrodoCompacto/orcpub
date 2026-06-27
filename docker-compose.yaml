@@ -94,9 +94,13 @@ services:
     restart: always
   web:
     image: nginx:alpine
+    # Full host:container mapping. Defaults bind all interfaces on 80/443.
+    # On a VM with host nginx, use docker-compose.vm.yaml or set in .env:
+    #   WEB_HTTP_PUBLISH=127.0.0.1:8880:80
+    #   WEB_HTTPS_PUBLISH=127.0.0.1:8843:443
     ports:
-      - "80:80"
-      - "443:443"
+      - "${WEB_HTTP_PUBLISH:-80:80}"
+      - "${WEB_HTTPS_PUBLISH:-443:443}"
     environment:
       # nginx:alpine runs envsubst on /etc/nginx/templates/*.template at startup.
       # Only defined env vars are substituted — nginx's own $host, $scheme, etc. are safe.
