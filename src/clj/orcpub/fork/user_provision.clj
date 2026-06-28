@@ -19,7 +19,7 @@
     (if (and (>= (count base) 3)
              (not (registration/bad-username? base)))
       base
-      (str "user" (subs (str (hash email)) 1 9))))
+      (str "user" (subs (str (hash email)) 1 9)))))
 
 (defn- username-taken? [db username]
   (boolean

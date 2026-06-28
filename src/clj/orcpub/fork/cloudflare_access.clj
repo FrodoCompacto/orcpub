@@ -76,7 +76,7 @@
   (let [keys (fetch-public-keys!)
         claims (some (fn [pk]
                        (try
-                         (jwt/verify token pk {:alg :rs256})
+                         (jwt/unsign token pk {:alg :rs256})
                          (catch Exception _ nil)))
                      keys)]
     (when-not claims

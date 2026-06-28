@@ -3,10 +3,12 @@
             [orcpub.dnd.e5.subs]
             [orcpub.dnd.e5.equipment-subs]
             [orcpub.dnd.e5.events :as events]
+            [orcpub.fork.bootstrap-auth]
             [orcpub.dnd.e5.autosave-fx :as autosave-fx]
             [orcpub.dnd.e5.views :as views]
             [orcpub.dnd.e5.views-2 :as views-2]
             [orcpub.dnd.e5.views.conflict-resolution :as conflict-views]
+            [orcpub.fork.auth-views :as auth-views]
             [orcpub.route-map :as routes]
             [cljs-http.client :as http]
             [clojure.string :as s]
@@ -31,7 +33,17 @@
 (autosave-fx/init-template-cache!)
 
 (def legacy-auth-page-routes
-  #{routes/login-page-route routes/register-page-route})
+  #{routes/login-page-route
+    routes/register-page-route
+    routes/verify-failed-route
+    routes/verify-success-route
+    routes/verify-sent-route
+    routes/send-password-reset-page-route
+    routes/password-reset-sent-route
+    routes/reset-password-page-route
+    routes/password-reset-success-route
+    routes/password-reset-expired-route
+    routes/password-reset-used-route})
 
 (def pages
   {nil views-2/splash-page
@@ -65,15 +77,6 @@
    routes/dnd-e5-char-parties-page-route views/parties
    routes/dnd-e5-my-content-route views/my-content-page
    routes/my-account-page-route views/my-account-page
-   routes/verify-failed-route views/verify-failed
-   routes/verify-success-route views/verify-success
-   routes/verify-sent-route views/verify-sent
-   routes/send-password-reset-page-route views/send-password-reset-page
-   routes/password-reset-sent-route views/password-reset-sent
-   routes/reset-password-page-route views/password-reset-page
-   routes/password-reset-success-route views/password-reset-success
-   routes/password-reset-expired-route views/password-reset-expired-page
-   routes/password-reset-used-route views/password-reset-used-page
    routes/unsubscribe-success-route views/unsubscribe-success})
 
 (defn handle-url-change [_]
@@ -116,7 +119,7 @@
   (let [{:keys [handler route-params] :as route} @(subscribe [:route])
         auth-error? @(subscribe [:auth-error])
         view (if auth-error?
-               views/auth-error-page
+               auth-views/auth-error-page
                (pages (or handler route)))
         query-string js/window.location.search
         query-map (query-map query-string)]

@@ -42,8 +42,8 @@
             [orcpub.fork.branding :as branding]
             [orcpub.fork.auth :as auth]
             [orcpub.fork.user-data :as user-data]
-            [orcpub.fork.cloudflare-access :as cf-access]
-            [orcpub.fork.user-provision :as user-provision]
+            [orcpub.fork.auth-session :as fork-auth-session]
+            [orcpub.fork.session :as session]
             [orcpub.routes.party :as party]
             [orcpub.routes.folder :as folder]
             [hiccup.page :as page]
@@ -230,26 +230,16 @@
                       {:error error-key})})
 
 (defn create-token [username exp]
-  (jwt/sign {:user username
-             :exp exp}
-            (environ/env :signature)))
+  (session/create-token username exp))
 
 (defn following-usernames [db ids]
-  (map :orcpub.user/username
-       (d/pull-many db '[:orcpub.user/username] ids)))
+  (session/following-usernames db ids))
 
-(defn user-body
-  "Build the user API response. Core fields are inline; fork-specific
-   fields (e.g. tier data) are added by user-data/enrich-response."
-  [db user]
-  (cond-> (user-data/enrich-response
-           {:username (:orcpub.user/username user)
-            :email (:orcpub.user/email user)
-            :send-updates? (boolean (:orcpub.user/send-updates? user))
-            :following (following-usernames db (map :db/id (:orcpub.user/following user)))}
-           user)
-    (:orcpub.user/pending-email user)
-    (assoc :pending-email (:orcpub.user/pending-email user))))
+(defn user-body [db user]
+  (session/user-body db user))
+
+(defn create-login-response [db conn user id & [headers]]
+  (session/create-app-session-response db conn user id headers))
 
 (defn bad-credentials-response [db username ip]
   (security/add-failed-login-attempt! username ip)
@@ -259,18 +249,6 @@
       (login-error (if (:db/id user-for-username)
                      errors/bad-credentials
                      errors/no-account)))))
-
-(defn create-login-response [db conn user id & [headers]]
-  (let [token (create-token (:orcpub.user/username user)
-                            (-> auth/token-lifetime-hours hours from-now))
-        now (java.util.Date.)]
-    (when auth/track-last-login?
-      (d/transact conn [{:db/id id
-                         :orcpub.user/last-login now}]))
-    {:status 200
-     :headers headers
-     :body {:user-data (user-body db user)
-            :token token}}))
 
 (defn login-response
   [{:keys [json-params db conn remote-addr] :as request}]
@@ -293,45 +271,11 @@
                 :else
                 (create-login-response db conn user id))))))
 
-(defn legacy-auth-disabled [_]
-  {:status 403
-   :body {:message "Password login and registration are disabled. Sign in via Cloudflare Access."
-          :error :legacy-auth-disabled}})
-
-(defn auth-session-error-response [e]
-  (let [data (ex-data e)
-        err (or (:error data) :invalid-cf-access)]
-    {:status 401 :body {:error err}}))
-
-(defn auth-session
-  "Bootstrap app session from Cloudflare Access JWT or dev auth email."
-  [{:keys [db conn] :as request}]
-  (try
-    (case auth/auth-mode
-      :cloudflare
-      (let [token (cf-access/jwt-from-request request)
-            {:keys [email]} (cf-access/verify-jwt token)
-            user (user-provision/find-or-create-user-by-email! conn db email)]
-        (create-login-response db conn user (:db/id user)))
-
-      :dev
-      (if (s/blank? auth/dev-auth-email)
-        {:status 500
-         :body {:error :dev-auth-misconfigured
-                :message "DEV_AUTH_EMAIL must be set when AUTH_MODE=dev"}}
-        (let [user (user-provision/find-or-create-user-by-email! conn db auth/dev-auth-email)]
-          (create-login-response db conn user (:db/id user))))
-
-      :legacy
-      {:status 404
-       :body {:error :auth-session-unavailable
-              :message "Use POST /login when AUTH_MODE=legacy"}})
-    (catch Exception e
-      (auth-session-error-response e))))
+(def auth-session fork-auth-session/handle-auth-session)
 
 (defn login [{:keys [json-params db] :as request}]
   (if (not= auth/auth-mode :legacy)
-    (legacy-auth-disabled request)
+    (fork-auth-session/legacy-auth-disabled request)
     (try
       (let [resp (login-response request)]
         resp)
@@ -384,7 +328,7 @@
 
 (defn register [{:keys [json-params db conn] :as request}]
   (if (not= auth/auth-mode :legacy)
-    (legacy-auth-disabled request)
+    (fork-auth-session/legacy-auth-disabled request)
     (let [{:keys [username email password send-updates?]} json-params
         username (when username (s/trim username))
         email (when email (s/lower-case (s/trim email)))

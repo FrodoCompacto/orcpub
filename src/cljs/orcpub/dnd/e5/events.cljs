@@ -1602,47 +1602,6 @@
  (fn [db [_ user-data]]
    (update db :user-data dissoc :user-data :token)))
 
-;; Startup auth — validate stored token or bootstrap via Cloudflare Access / dev auth.
-(reg-event-fx
- :verify-user-session
- (fn [{:keys [db]} _]
-   (if (:token (:user-data db))
-     (do (go (let [response (<! (http/get (url-for-route routes/user-route)
-                                          {:headers (authorization-headers db)}))]
-               (case (:status response)
-                 200 (dispatch [:set-loading false])
-                 401 (do (dispatch [:clear-login])
-                         (dispatch [:bootstrap-auth]))
-                 (dispatch [:set-loading false]))))
-         {})
-     {:dispatch [:bootstrap-auth]})))
-
-(reg-event-fx
- :bootstrap-auth
- (fn [{:keys [db]} _]
-   (if (:token (:user-data db))
-     {:dispatch [:verify-user-session]}
-     (do (dispatch [:set-loading true])
-         (go (let [response (<! (http/get (url-for-route routes/auth-session-route)
-                                          {:with-credentials? true}))]
-               (dispatch [:set-loading false])
-               (if (= 200 (:status response))
-                 (dispatch [:login-success false response])
-                 (dispatch [:auth-bootstrap-failed response]))))
-         {}))))
-
-(reg-event-fx
- :auth-bootstrap-failed
- (fn [{:keys [db]} [_ response]]
-   {:db (assoc db :auth-error (or (-> response :body :error)
-                                  (-> response :status (str " http"))))
-    :dispatch [:route routes/default-route]}))
-
-(reg-event-db
- :clear-auth-error
- (fn [db _]
-   (dissoc db :auth-error)))
-
 (reg-event-db
  :set-user
  (fn [db [_ user-data]]
@@ -4595,11 +4554,6 @@
  (fn [_ [_ character]]
    {:dispatch-n [[:set-character character]
                  [:route routes/dnd-e5-char-builder-route]]}))
-
-(reg-event-fx
- :route-to-login
- (fn [_ _]
-   {:dispatch [:bootstrap-auth]}))
 
 (reg-event-db
  ::char5e/show-options

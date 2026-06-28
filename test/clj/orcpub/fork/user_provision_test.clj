@@ -5,8 +5,8 @@
             [environ.core :as environ]
             [orcpub.db.schema :as schema]
             [orcpub.fork.auth :as auth]
-            [orcpub.fork.user-provision :as provision]
-            [orcpub.routes :as routes])
+            [orcpub.fork.auth-session :as auth-session]
+            [orcpub.fork.user-provision :as provision])
   (:import [java.util UUID]))
 
 (defmacro with-conn [conn-binding & body]
@@ -63,7 +63,7 @@
                                   (when (= k :signature)
                                     "test-secret-key-long-enough-for-jwt"))]
         (let [db (d/db mocked-conn)
-              response (routes/auth-session {:db db :conn mocked-conn :headers {}})]
+              response (auth-session/handle-auth-session {:db db :conn mocked-conn :headers {}})]
           (is (= 200 (:status response)))
           (is (string? (get-in response [:body :token])))
           (is (= "devuser" (get-in response [:body :user-data :username]))))))))

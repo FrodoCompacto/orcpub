@@ -250,11 +250,6 @@
    (:user-data db)))
 
 (reg-sub
- :auth-error
- (fn [db _]
-   (:auth-error db)))
-
-(reg-sub
  :username
  (fn [db _]
    (-> db :user-data :user-data :username)))

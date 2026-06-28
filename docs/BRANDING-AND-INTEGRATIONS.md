@@ -6,7 +6,7 @@ How the app handles fork-specific customization (logos, names, analytics, ads, t
 
 The app used to have DMV-specific values hardcoded throughout shared files — views, events, email templates, privacy pages. Every merge between public and production required manually resolving dozens of conflicts in the same large files.
 
-Now all fork-specific behavior lives in **6 small override files**. Shared files call the same functions on both branches — they just get different results.
+Now all fork-specific behavior lives in **small override files** under `src/**/orcpub/fork/`. Shared files call the same functions on both branches — they just get different results, or load fork modules via thin hooks.
 
 ### Before
 
@@ -36,20 +36,29 @@ All the actual content now lives in override files that never conflict on merge.
 
 ---
 
-## The 6 Override Files
+## Override Files
 
-All live under `src/clj/orcpub/fork/` (server) and `src/cljs/orcpub/fork/` (client). These are the only files that differ between public and production. On merge, always **keep production's version**.
+All live under `src/clj/orcpub/fork/` (server) and `src/cljs/orcpub/fork/` (client). On merge, always **keep the fork's version** of these files.
 
-| File | Path | What it controls | Public repo | Production |
-|------|------|-----------------|-------------|------------|
-| `branding.clj` | `src/clj/orcpub/fork/` | App name, logos, emails, social links, field limits | OrcPub defaults | DMV defaults |
-| `branding.cljs` | `src/cljs/orcpub/fork/` | Same values on the client side | OrcPub fallbacks | DMV fallbacks |
-| `user_tier.cljs` | `src/cljs/orcpub/fork/` | User tier subscription (`:user-tier`) | Always `:free` | Derived from patron status |
-| `user_data.clj` | `src/clj/orcpub/fork/` | API response enrichment | Pass-through | Adds patron fields |
-| `integrations.clj` | `src/clj/orcpub/fork/` | Server-side `<head>` script tags | Empty | Matomo + AdSense |
-| `integrations.cljs` | `src/cljs/orcpub/fork/` | Client-side UI hooks + analytics | No-op stubs | Full implementation |
+| File | Path | What it controls |
+|------|------|------------------|
+| `branding.clj` | `src/clj/orcpub/fork/` | App name, logos, emails, social links, field limits |
+| `branding.cljs` | `src/cljs/orcpub/fork/` | Same values on the client side |
+| `user_tier.cljs` | `src/cljs/orcpub/fork/` | User tier subscription (`:user-tier`) |
+| `user_data.clj` | `src/clj/orcpub/fork/` | API response enrichment |
+| `integrations.clj` | `src/clj/orcpub/fork/` | Server-side `<head>` script tags |
+| `integrations.cljs` | `src/cljs/orcpub/fork/` | Client-side UI hooks + analytics |
+| `auth.clj` | `src/clj/orcpub/fork/` | `AUTH_MODE`, CF Access env, session lifetime |
+| `cloudflare_access.clj` | `src/clj/orcpub/fork/` | Cloudflare Access JWT validation |
+| `user_provision.clj` | `src/clj/orcpub/fork/` | Find-or-create user by email (SSO) |
+| `auth_session.clj` | `src/clj/orcpub/fork/` | `GET /auth/session` handler, legacy login 403 |
+| `session.clj` | `src/clj/orcpub/fork/` | App JWT token + user-body session response |
+| `bootstrap_auth.cljs` | `src/cljs/orcpub/fork/` | re-frame bootstrap / reauth events |
+| `auth_views.cljs` | `src/cljs/orcpub/fork/` | Auth error page (CF bootstrap failure) |
 
-Everything else — views.cljs, events.cljs, email.clj, privacy.clj, character_builder.cljs — is **identical** on both branches.
+Branding and integrations differ between public OrcPub and production DMV. Auth modules exist only on the fork (Cloudflare Access SSO).
+
+Shared files (`views.cljs`, `events.cljs`, `routes.clj`) keep **minimal hooks** — see `.cursor/rules/fork-sync.mdc`.
 
 ---
 
