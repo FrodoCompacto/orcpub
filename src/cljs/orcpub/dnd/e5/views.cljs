@@ -7717,8 +7717,8 @@
     [:button.form-button.m-r-10.m-b-10
      {:on-click (make-event-handler ::e5/export-all-plugins)}
      "Export All"]]
-   [homebrew-sync/modal]
    [:div.flex.justify-cont-end
+    [homebrew-sync/confirmation]
     (when @(subscribe [::char/delete-plugin-confirmation-shown?])
       [:div.p-20.flex.justify-cont-end
        [:div

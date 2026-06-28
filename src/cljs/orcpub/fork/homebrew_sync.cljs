@@ -23,36 +23,39 @@
 (defn- remote-has-content? [body]
   (plugins-have-content? (:plugins body)))
 
-(defn- hide-modal-db [db]
-  (assoc db :homebrew-sync-modal {:active? false}))
+(defn- hide-confirmation-db [db]
+  (-> db
+      (assoc :homebrew-sync-confirmation nil)
+      (dissoc :homebrew-sync-remote-plugins)))
 
-(defn- show-modal-db [db mode remote-plugins]
-  (assoc db :homebrew-sync-modal
-         {:active? true
-          :mode mode
-          :remote-plugins remote-plugins}))
+(defn- show-save-confirmation-db [db]
+  (-> db
+      (assoc :homebrew-sync-confirmation :save)
+      (dissoc :homebrew-sync-remote-plugins)))
+
+(defn- show-load-confirmation-db [db remote-plugins]
+  (-> db
+      (assoc :homebrew-sync-confirmation :load
+             :homebrew-sync-remote-plugins remote-plugins)))
 
 (reg-sub
- ::modal-active?
+ ::confirmation
  (fn [db _]
-   (boolean (get-in db [:homebrew-sync-modal :active?]))))
-
-(reg-sub
- ::modal
- (fn [db _]
-   (:homebrew-sync-modal {:active? false})))
+   (when-let [mode (:homebrew-sync-confirmation db)]
+     {:mode mode
+      :remote-plugins (:homebrew-sync-remote-plugins db)})))
 
 (reg-event-db
- ::cancel-modal
+ ::hide-confirmation
  (fn [db _]
-   (hide-modal-db db)))
+   (hide-confirmation-db db)))
 
 (reg-event-fx
  ::click-save-to-account
  (fn [{:keys [db]} _]
    (if-not (plugins-have-content? (:plugins db))
      {:dispatch [:show-error-message
-                "No Option Source content in your browser to save."]}
+                 "No Option Source content in your browser to save."]}
      {:http {:method :get
              :headers (authorization-headers db)
              :url (url-for-route routes/user-homebrew-route)
@@ -64,13 +67,13 @@
  (fn [{:keys [db]} [_ response]]
    (let [body (:body response)]
      (if (remote-has-content? body)
-       {:db (show-modal-db db :save (:plugins body))}
+       {:db (show-save-confirmation-db db)}
        {:dispatch [::confirm-save-to-account]}))))
 
 (reg-event-fx
  ::confirm-save-to-account
  (fn [{:keys [db]} _]
-   {:db (hide-modal-db db)
+   {:db (hide-confirmation-db db)
     :http {:method :put
            :headers (authorization-headers db)
            :url (url-for-route routes/user-homebrew-route)
@@ -104,7 +107,7 @@
                    "No content saved in your account yet."]}
 
        (plugins-have-content? (:plugins db))
-       {:db (show-modal-db db :load remote)}
+       {:db (show-load-confirmation-db db remote)}
 
        :else
        {:dispatch-n [[:orcpub.dnd.e5/set-plugins remote]
@@ -115,36 +118,44 @@
 (reg-event-fx
  ::load-replace
  (fn [{:keys [db]} _]
-   (let [remote (get-in db [:homebrew-sync-modal :remote-plugins])]
-     {:db (hide-modal-db db)
-      :dispatch-n [[:orcpub.dnd.e5/set-plugins remote]
-                   [:show-warning-message
-                    "Option Sources loaded from your account (replaced local content)."
-                    5000]]})))
+   (let [remote (:homebrew-sync-remote-plugins db)]
+     (if (plugins-have-content? remote)
+       {:db (hide-confirmation-db db)
+        :dispatch-n [[:orcpub.dnd.e5/set-plugins remote]
+                     [:show-warning-message
+                      "Option Sources loaded from your account (replaced local content)."
+                      5000]]}
+       {:db (hide-confirmation-db db)
+        :dispatch [:show-error-message
+                   "Could not load account content. Please try again."]}))))
 
 (reg-event-fx
  ::load-merge
  (fn [{:keys [db]} _]
    (let [local (:plugins db)
-         remote (get-in db [:homebrew-sync-modal :remote-plugins])
-         merged (e5/merge-all-plugins local remote)]
-     {:db (hide-modal-db db)
-      :dispatch-n [[:orcpub.dnd.e5/set-plugins merged]
-                   [:show-warning-message
-                    "Option Sources merged from your account."
-                    5000]]})))
+         remote (:homebrew-sync-remote-plugins db)]
+     (if (plugins-have-content? remote)
+       (let [merged (e5/merge-all-plugins local remote)]
+         {:db (hide-confirmation-db db)
+          :dispatch-n [[:orcpub.dnd.e5/set-plugins merged]
+                       [:show-warning-message
+                        "Option Sources merged from your account."
+                        5000]]})
+       {:db (hide-confirmation-db db)
+        :dispatch [:show-error-message
+                   "Could not load account content. Please try again."]}))))
 
 (reg-event-fx
  ::sync-failure
  (fn [_ [_ op response]]
-   (let [error (-> response :body :error)]
-     {:dispatch [:show-error-message
-                 (case error
-                   :empty-plugins "No Option Source content to save."
-                   :invalid-plugins "Content failed validation and could not be saved."
-                   (str "Could not "
-                        (name op)
-                        " account content. Please try again."))]})))
+   (let [error (-> response :body :error)
+         message (cond
+                   (= error :empty-plugins) "No Option Source content to save."
+                   (= error :invalid-plugins) "Content failed validation and could not be saved."
+                   :else (str "Could not "
+                              (if (keyword? op) (name op) (str op))
+                              " account content. Please try again."))]
+     {:dispatch [:show-error-message message]})))
 
 (def ^:private community-content-url
   "https://docs.google.com/spreadsheets/d/129gwuo7c2STrgnNs82KDIN3FcxKccRafOk4ykO_imak/edit?usp=sharing")
@@ -167,33 +178,37 @@
                 :on-click #(dispatch [::click-load-from-account])}
        "Load from Account"]])])
 
-(defn modal []
-  (when @(subscribe [::modal-active?])
-    (let [{:keys [mode]} @(subscribe [::modal])]
-      [:div.p-20.flex.justify-cont-end
-       [:div
-        (case mode
-          :save
-          [:div.m-b-10
-           "This will overwrite Option Sources saved in your account. Continue?"]
-          :load
-          [:div.m-b-10
-           "You have Option Sources in your browser. "
-           "Load from account will change your local content."])
-        [:div.flex
-         [:button.form-button
-          {:on-click #(dispatch [::cancel-modal])}
-          "Cancel"]
-         (case mode
-           :save
-           [:button.link-button.m-l-10
-            {:on-click #(dispatch [::confirm-save-to-account])}
-            "Save"]
-           :load
-           [:<>
-            [:button.link-button.m-l-10
-             {:on-click #(dispatch [::load-replace])}
-             "Replace"]
-            [:button.link-button.m-l-10
-             {:on-click #(dispatch [::load-merge])}
-             "Merge"]])]]])))
+(defn confirmation []
+  (when-let [{:keys [mode]} @(subscribe [::confirmation])]
+    [:div.p-20.flex.justify-cont-end
+     [:div
+      [:div.m-b-10
+       (cond
+         (= mode :save)
+         "This will overwrite Option Sources saved in your account. Continue?"
+
+         (= mode :load)
+         "You have Option Sources in your browser. Load from account will change your local content."
+
+         :else
+         "Continue?")]
+      [:div.flex
+       [:button.form-button
+        {:on-click #(dispatch [::hide-confirmation])}
+        "cancel"]
+       (cond
+         (= mode :save)
+         [:span.link-button
+          {:on-click #(dispatch [::confirm-save-to-account])}
+          "save"]
+
+         (= mode :load)
+         [:<>
+          [:span.link-button
+           {:on-click #(dispatch [::load-replace])}
+           "replace"]
+          [:span.link-button
+           {:on-click #(dispatch [::load-merge])}
+           "merge"]]
+
+         :else nil)]]]))

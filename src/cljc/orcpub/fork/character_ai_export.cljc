@@ -3,14 +3,21 @@
    Not an import format — descriptive labels and display values only."
   (:require [clojure.string :as s]
             [orcpub.common :as common]
+            [orcpub.entity :as entity]
             [orcpub.entity-spec :as es]
+            [orcpub.template :as t]
             [orcpub.pdf-spec :as pdf]
+            [orcpub.dice :as dice]
             [orcpub.dnd.e5.character :as char5e]
+            [orcpub.dnd.e5.character.equipment :as char-equip5e]
+            [orcpub.dnd.e5.display :as disp5e]
+            [orcpub.dnd.e5.magic-items :as mi5e]
             [orcpub.dnd.e5.options :as opt5e]
             [orcpub.dnd.e5.skills :as skill5e]
+            [orcpub.dnd.e5.weapons :as weapon5e]
             #?(:cljs [cljsjs.filesaverjs])
             #?(:cljs [orcpub.fork.branding :as branding])
-            #?(:cljs [re-frame.core :refer [dispatch]])))
+            #?(:cljs [re-frame.core :refer [dispatch subscribe]])))
 
 (defn- field [label value]
   (when (some? value)
@@ -27,21 +34,140 @@
 (defn- ability-label [k]
   (or (:name (opt5e/abilities-map k)) (s/upper-case (name k))))
 
-(defn- identity-section [built-char]
+(def ^:private ignore-paths-ending-with
+  #{:class :levels :asi-or-feat :ability-score-improvement})
+
+(defn- ancestor-names-string [built-template path]
+  (let [ancestor-paths (map
+                        (fn [p]
+                          (if (ignore-paths-ending-with (last p))
+                            []
+                            p))
+                        (reductions conj [] path))
+        ancestors (map (fn [a-p]
+                         (let [template-path (entity/get-template-selection-path built-template a-p [])]
+                           (entity/get-in-lazy built-template template-path)))
+                       (butlast ancestor-paths))
+        ancestor-names (map ::t/name (remove nil? ancestors))]
+    (s/join " - " ancestor-names)))
+
+(defn- find-top-level-selection [built-template selection-key]
+  (some (fn [sel] (when (= (::t/key sel) selection-key) sel))
+        (::t/selections built-template)))
+
+(defn- option-display-name [selection option-key]
+  (when option-key
+    (or (some (fn [{:keys [::t/key ::t/name]}]
+                (when (= key option-key) name))
+              (entity/selection-options selection))
+        (common/kw-to-name option-key true))))
+
+(defn- selected-values-text [selection entity-data]
+  (cond
+    (vector? entity-data)
+    (s/join ", "
+            (remove nil?
+                    (map #(option-display-name selection (::entity/key %))
+                         entity-data)))
+
+    (map? entity-data)
+    (or (some-> entity-data ::entity/key (option-display-name selection))
+        (let [v (::entity/value entity-data)]
+          (when (and v (not (map? v)) (not (coll? v)))
+            (str v))))
+
+    :else nil))
+
+(defn- selection-label [built-template path selection]
+  (let [ancestors (ancestor-names-string built-template path)
+        sel-name (::t/name selection)]
+    (if (s/blank? ancestors)
+      sel-name
+      (str ancestors " - " sel-name))))
+
+(def ^:private manual-inventory-keys
+  #{:weapons :armor :equipment :treasure :magic-weapons :magic-armor :other-magic-items})
+
+(def ^:private choice-include-tags
+  #{:ability-scores :race :subrace :background :class :starting-equipment :profs :feats
+    :optional-content})
+
+(defn- include-choice-selection? [{:keys [::t/key ::t/tags]}]
+  (and (some tags choice-include-tags)
+       (not (manual-inventory-keys key))
+       (not (and (contains? tags :equipment) (not (contains? tags :starting-equipment))))
+       (not (contains? tags :spells))))
+
+(defn- nested-selection-name [parent-option sel-key]
+  (or (some (fn [sel] (when (= (::t/key sel) sel-key) (::t/name sel)))
+            (::t/selections parent-option))
+      (common/kw-to-name sel-key true)))
+
+(defn- race-option-selections-text [character built-template]
+  (let [race-opt (get-in character [::entity/options :race])
+        race-key (::entity/key race-opt)]
+    (when race-key
+      (let [race-selection (find-top-level-selection built-template :race)
+            race-template-opt (some #(when (= (::t/key %) race-key) %)
+                                    (entity/selection-options race-selection))
+            nested (get race-opt ::entity/options)]
+        (when (and race-template-opt (seq nested))
+          (s/join "\n"
+                  (remove nil?
+                          (for [[sel-key selected] nested
+                                :when (not= sel-key :subrace)
+                                :let [nested-selection (some #(when (= (::t/key %) sel-key) %)
+                                                              (::t/selections race-template-opt))
+                                      value (selected-values-text nested-selection selected)]]
+                            (when value
+                              (str (nested-selection-name race-template-opt sel-key) ": " value))))))))))
+
+(defn- identity-section [built-char character built-template]
   (let [race (char5e/race built-char)
         subrace (char5e/subrace built-char)
         levels (char5e/levels built-char)
-        classes (char5e/classes built-char)]
+        classes (char5e/classes built-char)
+        ability-scores-sel (find-top-level-selection built-template :ability-scores)
+        ability-opt (get-in character [::entity/options :ability-scores])
+        ability-method (when ability-scores-sel
+                         (option-display-name ability-scores-sel (::entity/key ability-opt)))
+        custom-race (get-in character [::entity/options :race ::entity/value])
+        custom-subrace (get-in character [::entity/options
+                                          :race
+                                          ::entity/options
+                                          :subrace
+                                          ::entity/value])
+        race-options (race-option-selections-text character built-template)]
     (section "Identity"
              [(field "Character Name" (char5e/character-name built-char))
               (field "Player Name" (char5e/player-name built-char))
+              (field "Sex" (char5e/sex built-char))
               (field "Race" (str race (when subrace (str " / " subrace))))
+              (field "Custom Race Name" custom-race)
+              (field "Custom Subrace Name" custom-subrace)
+              (field "Race Options" race-options)
+              (field "Ability Score Method" ability-method)
               (field "Class and Level" (pdf/class-string classes levels))
               (field "Background" (char5e/background built-char))
               (field "Alignment" (char5e/alignment built-char))
               (field "Experience Points" (char5e/xps built-char))
               (field "Faction" (char5e/faction-name built-char))]
              {:description "Name, race, class, background, and alignment"})))
+
+(defn- builder-choices-section [character built-char built-template]
+  (when (and character built-template)
+    (let [selections (entity/available-selections character built-char built-template)
+          choice-fields
+          (for [{:keys [::t/path] :as selection} selections
+                :when (include-choice-selection? selection)
+                :let [label (selection-label built-template path selection)
+                      entity-data (entity/get-option built-template character path)
+                      value (selected-values-text selection entity-data)]
+                :when value]
+            (field label value))]
+      (section "Builder Choices"
+               choice-fields
+               {:description "Selections made in the character builder, for inferring build choices"}))))
 
 (defn- appearance-section [built-char]
   (section "Appearance"
@@ -113,10 +239,48 @@
               (field "Number of Attacks" (char5e/number-of-attacks built-char))]
              {:description "Combat statistics"})))
 
+(defn- damage-str [die die-count mod damage-type]
+  (str (dice/dice-string die-count die mod)
+       (when damage-type
+         (str " " (if (keyword? damage-type) (name damage-type) (str damage-type))))))
+
+(defn- weapon-attack-lines [built-char all-weapons-map]
+  (let [all-weapons (mi5e/equipped-items-details
+                     (char5e/all-weapons-inventory built-char)
+                     all-weapons-map)]
+    (mapcat
+     (fn [{:keys [name ::weapon5e/damage-die ::weapon5e/damage-die-count ::weapon5e/damage-type]
+           :as weapon}]
+       (let [versatile (:versatile weapon)
+             normal-damage-modifier (char5e/best-weapon-damage-modifier built-char weapon false)
+             normal {:name (:name weapon)
+                     :attack-bonus (char5e/best-weapon-attack-modifier built-char weapon)
+                     :damage (damage-str damage-die damage-die-count normal-damage-modifier damage-type)}]
+         (remove
+          nil?
+          [normal
+           (when versatile
+             {:name (str (:name weapon) " (two-handed)")
+              :attack-bonus (char5e/weapon-attack-modifier built-char weapon false)
+              :damage (damage-str (:damage-die versatile)
+                                  (:damage-die-count versatile)
+                                  normal-damage-modifier
+                                  damage-type)})])))
+     (remove #(= (::weapon5e/type %) :ammunition) all-weapons))))
+
+(defn- format-all-attacks [built-char all-weapons-map]
+  (let [weapon-lines (weapon-attack-lines built-char all-weapons-map)
+        custom-attacks (map pdf/attack-string (es/entity-val built-char :attacks))
+        weapon-text (map (fn [{:keys [name attack-bonus damage]}]
+                           (str name ". " (common/bonus-str attack-bonus) ", " damage))
+                         weapon-lines)
+        number-of-attacks (char5e/number-of-attacks built-char)]
+    (str "Number of Attacks: " number-of-attacks "\n"
+         (s/join "\n" (concat custom-attacks weapon-text)))))
+
 (defn- attacks-section [built-char {:keys [all-weapons-map]}]
   (when all-weapons-map
-    (let [attack-data (pdf/attacks-and-spellcasting-fields built-char all-weapons-map)
-          attacks-text (:attacks-and-spellcasting attack-data)]
+    (let [attacks-text (format-all-attacks built-char all-weapons-map)]
       (section "Attacks"
                [(field "Attacks and Weapons" attacks-text)]
                {:description "Weapon attacks and custom attacks"}))))
@@ -160,17 +324,58 @@
     :pp "Platinum Pieces (PP)"
     (name kw)))
 
-(defn- equipment-section [built-char {:keys [all-magic-items-map]}]
-  (when all-magic-items-map
-    (let [equip-data (pdf/equipment-fields built-char all-magic-items-map)
+(defn- inventory-line [equipment-map kw cfg]
+  (let [qty (::char-equip5e/quantity cfg 1)
+        equipped? (::char-equip5e/equipped? cfg true)
+        name (disp5e/equipment-name equipment-map kw)]
+    (str name
+         (when (> qty 1) (str " x" qty))
+         " (equipped: " (if equipped? "yes" "no") ")")))
+
+(defn- custom-item-line [{:keys [::char-equip5e/name ::char-equip5e/quantity ::char-equip5e/equipped?]}]
+  (str name
+       (when (> quantity 1) (str " x" quantity))
+       " (equipped: " (if equipped? "yes" "no") ")"))
+
+(defn- format-inventory-group [label equipment-map inventory-map]
+  (when (seq inventory-map)
+    (field label
+           (s/join "\n"
+                   (map (fn [[kw cfg]] (inventory-line equipment-map kw cfg))
+                        (sort inventory-map))))))
+
+(defn- equipment-section [built-char {:keys [all-magic-items-map all-weapons-map]}]
+  (when (or all-magic-items-map all-weapons-map)
+    (let [equipment-map (merge mi5e/all-equipment-map all-magic-items-map all-weapons-map)
+          weapons (es/entity-val built-char :weapons)
+          magic-weapons (es/entity-val built-char :magic-weapons)
+          armor (es/entity-val built-char :armor)
+          magic-armor (es/entity-val built-char :magic-armor)
+          equipment (es/entity-val built-char :equipment)
+          magic-items (es/entity-val built-char :magic-items)
+          treasure (es/entity-val built-char :treasure)
+          treasure-map (into {} (map (fn [[kw {qty ::char-equip5e/quantity}]] [kw qty]) treasure))
           coin-fields (for [k pdf/coin-keys
-                            :let [v (k equip-data)]
+                            :let [v (k treasure-map)]
                             :when (and v (pos? (long v)))]
-                        (field (coin-label k) v))]
+                        (field (coin-label k) v))
+          custom-equipment (when (seq (char5e/custom-equipment built-char))
+                             (field "Custom Equipment"
+                                    (s/join "\n" (map custom-item-line (char5e/custom-equipment built-char)))))
+          custom-treasure (when (seq (char5e/custom-treasure built-char))
+                            (field "Custom Treasure"
+                                   (s/join "\n" (map custom-item-line (char5e/custom-treasure built-char)))))]
       (section "Equipment"
                (into coin-fields
-                     [(field "Equipped Items" (:features-and-traits equip-data))
-                      (field "Other Equipment and Treasure" (:treasure equip-data))])
+                     (remove nil?
+                             [(format-inventory-group "Weapons" equipment-map weapons)
+                              (format-inventory-group "Magic Weapons" equipment-map magic-weapons)
+                              (format-inventory-group "Armor" equipment-map armor)
+                              (format-inventory-group "Magic Armor" equipment-map magic-armor)
+                              (format-inventory-group "Equipment" equipment-map equipment)
+                              (format-inventory-group "Magic Items" equipment-map magic-items)
+                              custom-equipment
+                              custom-treasure]))
                {:description "Equipped gear, inventory, and currency"}))))
 
 (defn- spell-level-label [lvl]
@@ -260,15 +465,25 @@
                (into class-meta-fields (concat slot-fields spell-list-fields))
                {:description "Known spells, spell slots, and spellcasting stats"}))))
 
+(defn section-field-value
+  "Test helper: find a field value by section and label in an export map."
+  [export section-name field-label]
+  (some (fn [{:keys [name fields]}]
+          (when (= name section-name)
+            (some #(when (= (:label %) field-label) (:value %)) fields)))
+        (:sections export)))
+
 (defn make-export
   "Build the export map for JSON download.
    plugin-data: same keys as PDF export (:spells-map, :plugin-spells-map,
    :language-map, :all-weapons-map, :all-magic-items-map, :current-armor-class).
+   character + built-template: raw entity and resolved template for builder choices.
    opts: {:app-name str :exported-at str :character-id str}"
-  [built-char plugin-data & [{:keys [app-name exported-at character-id]}]]
+  [built-char plugin-data character built-template & [{:keys [app-name exported-at character-id]}]]
   (let [character-name (or (char5e/character-name built-char) "Character")
         sections (remove nil?
-                        [(identity-section built-char)
+                        [(identity-section built-char character built-template)
+                         (builder-choices-section character built-char built-template)
                          (appearance-section built-char)
                          (ability-scores-section built-char)
                          (saving-throws-section built-char)
@@ -303,8 +518,10 @@
      (defn download!
        "Download AI-readable JSON for the given built character."
        [id built-char plugin-data]
-       (let [exported-at (.toISOString (js/Date.))
-             data (make-export built-char plugin-data
+       (let [character @(subscribe [::char5e/character id])
+             built-template @(subscribe [::char5e/built-template id])
+             exported-at (.toISOString (js/Date.))
+             data (make-export built-char plugin-data character built-template
                                {:app-name branding/app-name
                                 :exported-at exported-at
                                 :character-id (str id)})
