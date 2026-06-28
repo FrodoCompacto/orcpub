@@ -7,7 +7,11 @@
             [clojure.string :as str]
             [orcpub.fork.auth :as auth])
   (:import (java.io ByteArrayInputStream)
-           (java.security.cert CertificateFactory X509Certificate)))
+           (java.math BigInteger)
+           (java.security KeyFactory)
+           (java.security.cert CertificateFactory X509Certificate)
+           (java.security.spec RSAPublicKeySpec)
+           (java.util Base64)))
 
 (def ^:private cert-cache (atom {:fetched-at 0 :certs []}))
 (def ^:private cert-ttl-ms (* 60 60 1000))
@@ -15,16 +19,58 @@
 (defn- certs-url []
   (str "https://" auth/cf-access-team-domain "/cdn-cgi/access/certs"))
 
+(defn- b64url-decode [^String s]
+  (let [s (-> s
+              (str/replace \- \+)
+              (str/replace \_ \/)
+              (str/replace #"=" ""))
+        pad (mod (count s) 4)
+        s (if (zero? pad) s (str s (apply str (repeat (- 4 pad) \=))))]
+    (.decode (Base64/getDecoder) s)))
+
 (defn- pem->public-key [pem]
-  (let [cf (CertificateFactory/getInstance "X.509")
-        cert ^X509Certificate (.generateCertificate cf (ByteArrayInputStream. (.getBytes pem)))]
-    (.getPublicKey cert)))
+  (when (and (string? pem) (not (str/blank? pem)))
+    (let [normalized (str/replace pem "\\n" "\n")
+          cf (CertificateFactory/getInstance "X.509")
+          cert ^X509Certificate (.generateCertificate cf (ByteArrayInputStream. (.getBytes normalized)))]
+      (.getPublicKey cert))))
+
+(defn- jwk->public-key
+  "Convert Cloudflare JWKS entry (RSA) to a Java PublicKey."
+  [{:keys [kty n e]}]
+  (when (= "RSA" (some-> kty str/upper-case))
+    (when (and n e)
+      (let [modulus (BigInteger. 1 (b64url-decode n))
+            exponent (BigInteger. 1 (b64url-decode e))
+            spec (RSAPublicKeySpec. modulus exponent)
+            kf (KeyFactory/getInstance "RSA")]
+        (.generatePublic kf spec)))))
+
+(defn- cert-entry->pem [entry]
+  (cond
+    (string? entry) entry
+    (map? entry) (or (:cert entry) (:Cert entry))
+    :else nil))
+
+(defn- public-cert-pems [data]
+  (distinct
+   (keep identity
+         (concat
+          (map cert-entry->pem (or (:public_certs data) (:public-certs data) []))
+          (when-let [pc (or (:public_cert data) (:public-cert data))]
+            [(cert-entry->pem pc)])))))
+
+(defn parse-certs-body
+  "Parse Cloudflare /cdn-cgi/access/certs JSON into distinct RSA PublicKeys.
+   Supports public_certs/public_cert objects ({:kid :cert}) and JWKS :keys."
+  [body]
+  (let [data (json/read-str body :key-fn keyword)
+        from-pems (keep pem->public-key (public-cert-pems data))
+        from-jwks (keep jwk->public-key (or (:keys data) []))]
+    (distinct (concat from-pems from-jwks))))
 
 (defn- parse-public-keys [body]
-  (let [data (json/read-str body :key-fn keyword)
-        pems (concat (when-let [c (:public-cert data)] [c])
-                     (or (:public-certs data) []))]
-    (keep pem->public-key pems)))
+  (parse-certs-body body))
 
 (defn fetch-public-keys!
   "Fetch Cloudflare Access public keys (cached ~1h)."

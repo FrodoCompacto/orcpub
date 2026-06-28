@@ -1,6 +1,7 @@
 (ns orcpub.fork.cloudflare-access-test
   (:require [buddy.core.keys :as keys]
             [buddy.sign.jwt :as jwt]
+            [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [orcpub.fork.auth :as auth]
             [orcpub.fork.cloudflare-access :as cf-access])
@@ -65,3 +66,41 @@
            (cf-access/jwt-from-request {:headers {"cf-access-jwt-assertion" "token-value"}})))
     (is (= "token-value"
            (cf-access/jwt-from-request {:headers {"Cf-Access-Jwt-Assertion" "token-value"}})))))
+
+(defn- big-int->b64url [^java.math.BigInteger n]
+  (let [bytes (.toByteArray n)
+        bytes (if (and (pos? (alength bytes))
+                       (zero? (aget bytes 0)))
+                (java.util.Arrays/copyOfRange bytes 1 (alength bytes))
+                bytes)]
+    (.. (java.util.Base64/getUrlEncoder)
+        (withoutPadding)
+        (encodeToString bytes))))
+
+(defn- rsa-public->jwk [^java.security.interfaces.RSAPublicKey pk]
+  {:kid "test-kid"
+   :kty "RSA"
+   :alg "RS256"
+   :use "sig"
+   :e (big-int->b64url (.getPublicExponent pk))
+   :n (big-int->b64url (.getModulus pk))})
+
+(deftest parse-certs-body-public-certs-format
+  (testing "parses Cloudflare public_certs objects with embedded PEM"
+    (let [body (slurp (clojure.java.io/resource "orcpub/fork/cf-access-certs-sample.json"))
+          keys (cf-access/parse-certs-body body)]
+      (is (>= (count keys) 1))
+      (is (every? #(instance? java.security.interfaces.RSAPublicKey %) keys)))))
+
+(deftest parse-certs-body-jwks-format
+  (testing "parses JWKS keys array as fallback"
+    (let [^java.security.interfaces.RSAPublicKey pk test-public-key
+          jwk (rsa-public->jwk pk)
+          body (json/write-str {:keys [jwk]})
+          keys (cf-access/parse-certs-body body)]
+      (is (= 1 (count keys)))
+      (let [token (sign-test-token {:email "player@example.com"
+                                    :aud test-aud
+                                    :iss (str "https://" test-team)
+                                    :exp (+ (quot (System/currentTimeMillis) 1000) 3600)})]
+        (is (some? (jwt/unsign token (first keys) {:alg :rs256})))))))
