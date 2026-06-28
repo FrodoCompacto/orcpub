@@ -325,6 +325,69 @@ docker compose up --build -d
 
 For environment variable details, see [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
 
+### Multi-app VM (host nginx + Docker)
+
+When the stack runs behind an existing nginx on the same machine (e.g. Oracle
+Cloud + Cloudflare), use the VM profile:
+
+```bash
+./scripts/vm-deploy.sh all
+```
+
+Full runbook: [docs/DEPLOY-VM.md](docs/DEPLOY-VM.md).
+
+### Planned production hardening (VM)
+
+These items are **intentionally deferred** on the current production VM
+(`dmv.frodo.cloud`). Security basics are in place (loopback Docker ports,
+Cloudflare-only public access, rotated secrets, log format without query
+strings). The two improvements below are organizational and gradual hardening,
+not open vulnerabilities.
+
+#### HSTS `max-age` → one year
+
+**Today:** host nginx sends `Strict-Transport-Security: max-age=86400` (1 day),
+matching the Salve app on the same VM.
+
+**Planned:** increase to `max-age=31536000` (1 year) in
+`/etc/nginx/sites-available/dmv` after the deployment has been stable for a
+while.
+
+**Why wait:** HSTS is cached aggressively by browsers. If HTTPS, certificate
+renewal, or Cloudflare origin settings break, a long `max-age` makes recovery
+harder for returning visitors until it expires. A short TTL during rollout lets
+you validate certbot renewal, Cloudflare **Full (strict)**, and nginx proxy
+behavior before committing to a one-year pin. This matches the incremental
+hardening approach used for the rest of the VM.
+
+**When to change:** after several weeks without HTTPS incidents; optionally add
+`includeSubDomains` only if every hostname on the cert is ready for HTTPS-only
+access.
+
+#### Move secrets from project `.env` to `/etc/orcpub/`
+
+**Today:** Docker reads secrets from `.env` in the clone directory
+(e.g. `/opt/orcpub-app/orcpub/.env`), mode `600`, gitignored. `./run --auto`
+generates `SIGNATURE`, `DATOMIC_PASSWORD`, and `ADMIN_PASSWORD` there.
+
+**Planned:** move to `/etc/orcpub/app.env` owned by `root:root`, mode `600`,
+and point `docker compose` at that file — the same pattern as Salve
+(`/etc/salve/backend.env`).
+
+**Why wait:** the current setup is acceptable: permissions are tight, secrets
+are not in git, and Datomic passwords were rotated successfully. Migration is
+mainly **consistency and defense-in-depth** (secrets outside the git checkout,
+not readable by unrelated processes in the project tree, easier backup policy).
+It requires a small compose change, a controlled restart, and updating the VM
+runbook — best done in a maintenance window, not during initial bring-up.
+
+**Why bother later:** members of the `docker` group effectively have root on
+the host; separating secrets from the clone reduces accidental exposure via
+backups, `git` operations, or future tooling that scans the project directory.
+
+See [docs/DEPLOY-VM.md](docs/DEPLOY-VM.md) for VM-specific commands when these
+changes are implemented.
+
 ### Upgrading from Datomic Free (pre-2026)
 
 If you have an existing deployment using the old Java 8 / Datomic Free stack,

@@ -175,3 +175,69 @@ Com a stack **parada** ou via ferramenta de backup:
 | orcpub `unhealthy` | `docker compose logs orcpub` — esperar 2–3 min; checar `DATOMIC_PASSWORD` |
 | Build OOM | `free -h`; considerar swap temporário ou build local + push de imagem |
 | Login falha | `SIGNATURE` mudou? Recriar sessão; `./docker-user.sh check admin` |
+
+## Melhorias planejadas (não urgentes)
+
+Itens de endurecimento **deliberadamente adiados** após o go-live em
+`dmv.frodo.cloud`. O ambiente já passou nos checks principais (portas loopback,
+Cloudflare sem bypass, logs sem query string, secrets rotacionados).
+
+### HSTS de 1 dia → 1 ano
+
+**Hoje:** em `/etc/nginx/sites-available/dmv`:
+
+```nginx
+add_header Strict-Transport-Security "max-age=86400" always;
+```
+
+(mesmo valor do Salve — 24 horas)
+
+**Plano:** alterar para `max-age=31536000` depois de algumas semanas estáveis.
+
+**Por quê esperar:** o HSTS fica cacheado no navegador. Se certificado,
+certbot, Cloudflare ou o proxy quebrarem, visitantes recorrentes ficam presos em
+HTTPS com erro até o `max-age` expirar. Com 1 dia você corrige rápido; com 1
+ano a janela de recuperação é longa. Só vale subir depois de confiar no ciclo
+completo: Let's Encrypt renovando, Cloudflare em **Full (strict)**, nginx host
+→ `127.0.0.1:8843` estável.
+
+**Como aplicar (futuro):**
+
+```bash
+sudo sed -i 's/max-age=86400/max-age=31536000/' /etc/nginx/sites-available/dmv
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Opcional depois: `includeSubDomains` — só se todos os subdomínios do cert
+suportarem HTTPS-only.
+
+### Migrar `.env` → `/etc/orcpub/app.env`
+
+**Hoje:** secrets em `/opt/orcpub-app/orcpub/.env`, `chmod 600`, fora do git.
+Funciona; `./run` e `docker compose` esperam o arquivo na raiz do clone.
+
+**Plano:** copiar para `/etc/orcpub/app.env` (`root:root`, `600`) e apontar o
+compose com `env_file:` — alinhado ao Salve (`/etc/salve/backend.env`).
+
+**Por quê esperar:** não é falha de segurança imediata. Permissões já estão
+corretas e senhas foram rotacionadas. A migração é **organização e
+defesa-em-profundidade**: secrets fora do diretório do repositório, política
+de backup mais clara, menos risco de vazar `.env` em tarball ou script que
+varre o clone.
+
+**Por quê fazer depois:** quem está no grupo `docker` tem poder equivalente a
+root; separar secrets do clone reduz superfície acidental. Exige janela de
+manutenção (restart da stack) e atualizar este runbook + VM_NOTES.
+
+**Esboço (futuro):**
+
+```bash
+sudo mkdir -p /etc/orcpub
+sudo cp /opt/orcpub-app/orcpub/.env /etc/orcpub/app.env
+sudo chmod 600 /etc/orcpub/app.env
+sudo chown root:root /etc/orcpub/app.env
+# Ajustar docker-compose para env_file: /etc/orcpub/app.env
+# docker compose up -d --force-recreate
+```
+
+Detalhes também em [README.md](../README.md#planned-production-hardening-vm).
