@@ -30,6 +30,9 @@
 ;; Must be called here (not self-initializing) so equipment-subs has loaded.
 (autosave-fx/init-template-cache!)
 
+(def legacy-auth-page-routes
+  #{routes/login-page-route routes/register-page-route})
+
 (def pages
   {nil views-2/splash-page
    routes/default-route views-2/splash-page
@@ -62,11 +65,9 @@
    routes/dnd-e5-char-parties-page-route views/parties
    routes/dnd-e5-my-content-route views/my-content-page
    routes/my-account-page-route views/my-account-page
-   routes/register-page-route views/register-form
    routes/verify-failed-route views/verify-failed
    routes/verify-success-route views/verify-success
    routes/verify-sent-route views/verify-sent
-   routes/login-page-route views/login-page
    routes/send-password-reset-page-route views/send-password-reset-page
    routes/password-reset-sent-route views/password-reset-sent
    routes/reset-password-page-route views/password-reset-page
@@ -76,8 +77,14 @@
    routes/unsubscribe-success-route views/unsubscribe-success})
 
 (defn handle-url-change [_]
-  (let [route (when js/window.location
-                (routes/match-route js/window.location.pathname))
+  (let [path (when js/window.location js/window.location.pathname)
+        route (when path (routes/match-route path))
+        handler (:handler route)
+        route (if (legacy-auth-page-routes handler)
+                (do (when js/window.history
+                      (.replaceState js/window.history {} nil (routes/path-for routes/default-route)))
+                    (routes/match-route (routes/path-for routes/default-route)))
+                route)
         config {:skip-path? true}]
     (dispatch [:route route (if (events/login-routes (:handler route))
                               (merge
@@ -107,15 +114,18 @@
 
 (defn main-view []
   (let [{:keys [handler route-params] :as route} @(subscribe [:route])
-        view (pages (or handler route))
+        auth-error? @(subscribe [:auth-error])
+        view (if auth-error?
+               views/auth-error-page
+               (pages (or handler route)))
         query-string js/window.location.search
         query-map (query-map query-string)]
     [:div
      [view (assoc route-params :query query-map)]
      [conflict-views/import-log-overlay]]))
 
-;; Verify auth token on startup (replaces @(subscribe [:user false]) side-effect)
-(dispatch-sync [:verify-user-session])
+;; Bootstrap auth on startup (Cloudflare Access JWT or dev auth)
+(dispatch-sync [:bootstrap-auth])
 
 ;; React 18 createRoot API (Reagent 2.0)
 (defonce root (rdc/create-root (js/document.getElementById "app")))

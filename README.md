@@ -336,6 +336,8 @@ Cloud + Cloudflare), use the VM profile:
 
 Full runbook: [docs/DEPLOY-VM.md](docs/DEPLOY-VM.md).
 
+**Authentication:** production uses [Cloudflare Access SSO](docs/DEPLOY-VM.md#autenticação-cloudflare-access-sso) (`AUTH_MODE=cloudflare`); local dev uses `AUTH_MODE=dev` with `DEV_AUTH_EMAIL`. Password login is disabled unless `AUTH_MODE=legacy`.
+
 ### Planned production hardening (VM)
 
 These items are **intentionally deferred** on the current production VM

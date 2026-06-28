@@ -250,6 +250,11 @@
    (:user-data db)))
 
 (reg-sub
+ :auth-error
+ (fn [db _]
+   (:auth-error db)))
+
+(reg-sub
  :username
  (fn [db _]
    (-> db :user-data :user-data :username)))
@@ -393,7 +398,7 @@
             (dispatch [:set-loading false])
             (handle-api-response response
               #(dispatch [::char5e/set-characters (:body response)])
-              :on-401 #(when-not login-optional? (dispatch [:route-to-login]))
+              :on-401 #(when-not login-optional? (dispatch [:bootstrap-auth]))
               :context "fetch characters"))))
     (ra/make-reaction
      (fn [] (get @app-db ::char5e/characters [])))))
@@ -408,7 +413,7 @@
             (dispatch [:set-loading false])
             (handle-api-response response
               #(dispatch [::party5e/set-parties (:body response)])
-              :on-401 #(when-not login-optional? (dispatch [:route-to-login]))
+              :on-401 #(when-not login-optional? (dispatch [:bootstrap-auth]))
               :context "fetch parties"))))
     (ra/make-reaction
      (fn [] (get @app-db ::char5e/parties [])))))
@@ -422,7 +427,7 @@
           (handle-api-response response
             (fn [])
             :on-401 #(do (dispatch [:set-user-data (dissoc (:user-data @app-db) :user-data :token)])
-                         (when required? (dispatch [:route-to-login])))
+                         (when required? (dispatch [:bootstrap-auth])))
             :on-500 #(when required? (dispatch (show-generic-error)))
             :context "fetch user"))))
     (ra/make-reaction

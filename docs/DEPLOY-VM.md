@@ -176,6 +176,62 @@ Com a stack **parada** ou via ferramenta de backup:
 | Build OOM | `free -h`; considerar swap temporário ou build local + push de imagem |
 | Login falha | `SIGNATURE` mudou? Recriar sessão; `./docker-user.sh check admin` |
 
+## Autenticação (Cloudflare Access SSO)
+
+O app **não usa mais tela de login/registro**. Sessão é criada automaticamente via
+`GET /auth/session`:
+
+1. Cloudflare Access autentica o visitante (Google, OTP, etc.).
+2. O proxy envia o header `Cf-Access-Jwt-Assertion` para o app.
+3. O backend valida o JWT (RS256, `aud`, `exp`, `iss`) contra os certs da CF.
+4. O email do claim provisiona (find-or-create) o usuário no Datomic.
+5. O browser recebe o JWT interno do app (`SIGNATURE`) para chamadas à API.
+
+**Nunca** confie só em `CF-Access-Authenticated-User-Email` — identidade vem do JWT
+validado.
+
+### Variáveis no `.env` de produção
+
+```env
+AUTH_MODE=cloudflare
+CF_ACCESS_TEAM_DOMAIN=arcaneinfra.cloudflareaccess.com
+CF_ACCESS_AUD=<Application Audience do app no Zero Trust>
+```
+
+Copie o **Application Audience (AUD)** em:
+Zero Trust → Access → Applications → `dmv.frodo.cloud` → Settings.
+
+**Não** defina `AUTH_MODE=dev` nem `DEV_AUTH_EMAIL` em produção.
+
+### Dev local
+
+```env
+AUTH_MODE=dev
+DEV_AUTH_EMAIL=test@test.com
+DEV_AUTH_USERNAME=test
+```
+
+```bash
+./menu start server
+# ou docker equivalente — abre direto no builder, sem Cloudflare
+```
+
+### Smoke test pós-deploy
+
+1. Abrir `https://dmv.frodo.cloud` (sessão CF limpa).
+2. Passar pelo challenge Cloudflare Access.
+3. App abre no character builder **sem** tela de login.
+4. Header mostra o email do usuário.
+
+### Rotação / troubleshooting auth
+
+| Sintoma | Ação |
+|---------|------|
+| 401 `cf-access-required` | Request não passou pelo Cloudflare Access (proxy direto?) |
+| 401 `invalid-cf-access` | AUD errado, JWT expirado, ou team domain incorreto |
+| 403 em POST `/login` | Esperado — login por senha desabilitado |
+| Loop de loading | Checar logs `docker compose logs orcpub`; validar `SIGNATURE` |
+
 ## Melhorias planejadas (não urgentes)
 
 Itens de endurecimento **deliberadamente adiados** após o go-live em

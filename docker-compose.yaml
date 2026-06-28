@@ -52,6 +52,11 @@ services:
       DATOMIC_URL: ${DATOMIC_URL:-datomic:dev://datomic:4334/orcpub}
       DATOMIC_PASSWORD: ${DATOMIC_PASSWORD:-change-me}
       SIGNATURE: ${SIGNATURE:-change-me-to-something-unique}
+      AUTH_MODE: ${AUTH_MODE:-cloudflare}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
+      DEV_AUTH_USERNAME: ${DEV_AUTH_USERNAME:-}
       CSP_POLICY: ${CSP_POLICY:-strict}
       DEV_MODE: ${DEV_MODE:-}
       LOAD_HOMEBREW_URL: ${LOAD_HOMEBREW_URL:-}

@@ -88,6 +88,7 @@
 
 
 
+(def auth-session-route :auth-session)
 (def register-route :register)
 (def register-page-route :register-page)
 (def my-account-page-route :my-account)
@@ -127,6 +128,7 @@
                   "re-verify" re-verify-route
                   "register" register-route
                   "login" login-route
+                  "auth/" {"session" auth-session-route}
                   "user" {"" user-route
                           "/email" user-email-route}
 

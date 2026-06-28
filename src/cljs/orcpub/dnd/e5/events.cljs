@@ -1602,8 +1602,7 @@
  (fn [db [_ user-data]]
    (update db :user-data dissoc :user-data :token)))
 
-;; Startup auth check — validates stored token on app load (core.cljs).
-;; Clears stale sessions before reg-sub-raw subs fire HTTP with expired tokens.
+;; Startup auth — validate stored token or bootstrap via Cloudflare Access / dev auth.
 (reg-event-fx
  :verify-user-session
  (fn [{:keys [db]} _]
@@ -1611,12 +1610,38 @@
      (do (go (let [response (<! (http/get (url-for-route routes/user-route)
                                           {:headers (authorization-headers db)}))]
                (case (:status response)
-                 200 nil
+                 200 (dispatch [:set-loading false])
                  401 (do (dispatch [:clear-login])
-                         (dispatch [:set-loading false]))
-                 nil)))
+                         (dispatch [:bootstrap-auth]))
+                 (dispatch [:set-loading false]))))
          {})
-     {})))
+     {:dispatch [:bootstrap-auth]})))
+
+(reg-event-fx
+ :bootstrap-auth
+ (fn [{:keys [db]} _]
+   (if (:token (:user-data db))
+     {:dispatch [:verify-user-session]}
+     (do (dispatch [:set-loading true])
+         (go (let [response (<! (http/get (url-for-route routes/auth-session-route)
+                                          {:with-credentials? true}))]
+               (dispatch [:set-loading false])
+               (if (= 200 (:status response))
+                 (dispatch [:login-success false response])
+                 (dispatch [:auth-bootstrap-failed response]))))
+         {}))))
+
+(reg-event-fx
+ :auth-bootstrap-failed
+ (fn [{:keys [db]} [_ response]]
+   {:db (assoc db :auth-error (or (-> response :body :error)
+                                  (-> response :status (str " http"))))
+    :dispatch [:route routes/default-route]}))
+
+(reg-event-db
+ :clear-auth-error
+ (fn [db _]
+   (dissoc db :auth-error)))
 
 (reg-event-db
  :set-user
@@ -1779,7 +1804,7 @@
              (if (= 401 (:status response))
                (if on-unauthorized
                  (dispatch (conj on-unauthorized response))
-                 (dispatch [:route-to-login]))
+                 (dispatch [:bootstrap-auth]))
                (if on-failure
                  (dispatch (conj on-failure response))
                  (dispatch (show-generic-error))))))))))
@@ -1833,9 +1858,7 @@
    {:dispatch-n [[:clear-login]]}))
 
 (def login-routes
-  #{routes/login-page-route
-    routes/register-page-route
-    routes/verify-sent-route
+  #{routes/verify-sent-route
     routes/reset-password-page-route
     routes/verify-failed-route
     routes/verify-success-route
@@ -4575,10 +4598,8 @@
 
 (reg-event-fx
  :route-to-login
- (fn [{:keys [db]} _]
-   ;; Reset loading counter — multiple parallel 401s can leave the overlay stuck
-   {:db (assoc db :loading 0)
-    :dispatch [:route routes/login-page-route {:secure? true :no-return? true}]}))
+ (fn [_ _]
+   {:dispatch [:bootstrap-auth]}))
 
 (reg-event-db
  ::char5e/show-options

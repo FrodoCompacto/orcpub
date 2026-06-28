@@ -49,6 +49,21 @@
       (str url "?password=" pw)
       url)))
 
+(defn dev-auth?
+  "True when AUTH_MODE=dev (local bootstrap without Cloudflare)."
+  []
+  (= (str/lower-case (or (env :auth-mode) "")) "dev"))
+
+(defn auth-mode
+  "Raw AUTH_MODE env string, or nil if unset."
+  []
+  (some-> (or (env :auth-mode) (System/getenv "AUTH_MODE")) str/trim not-empty))
+
+(defn cf-access-enabled?
+  "True when AUTH_MODE=cloudflare."
+  []
+  (= (str/lower-case (or (auth-mode) "cloudflare")) "cloudflare"))
+
 ;; Content Security Policy configuration
 ;; CSP_POLICY environment variable options:
 ;;   - "strict"     : Nonce-based CSP with 'strict-dynamic' (default, maximum security)

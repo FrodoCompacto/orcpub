@@ -217,43 +217,27 @@
 
 (defn user-header-view []
   (let [username @(subscribe [:username])
+        email @(subscribe [:email])
+        display-name (or email username)
         mobile? @(subscribe [:mobile?])]
-    [:div#user-header.pointer.posn-rel
-     (when username
+    (when display-name
+      [:div#user-header.pointer.posn-rel
        {:on-mouse-over handle-user-menu
-        :on-mouse-out hide-user-menu})
-     [:div.b-rad-5.flex.align-items-c.p-l-10.p-r-10.p-t-5.p-b-5.f-s-16 {:style login-style-menu }
-      [:div.user-icon [svg-icon "orc-head" 35 ""]]
-      (if username
+        :on-mouse-out hide-user-menu}
+       [:div.b-rad-5.flex.align-items-c.p-l-10.p-r-10.p-t-5.p-b-5.f-s-16 {:style login-style-menu }
+        [:div.user-icon [svg-icon "orc-head" 35 ""]]
         [:span.f-w-b.t-a-r
-         (when (not @(subscribe [:mobile?])) [:span.m-r-5 username])]
-        [:span.pointer.flex.flex-column.align-items-end
-         [:span.white.f-w-b.m-l-5
-          {:on-click dispatch-route-to-login}
-          [:span "LOGIN"]]])
-      (when username
-        [:i.fa.m-l-5.fa-caret-down])]
-     [:div#user-menu.shadow.f-w-b
-      {:style user-menu-style
-       :on-click hide-user-menu}
-      [:div.p-10.opacity-5.hover-opacity-full
-       {:on-click dispatch-logout}
-       "LOG OUT"]
-      [:div.p-10.opacity-5.hover-opacity-full
-       {:on-click dispatch-route-to-my-account}
-       "ACCOUNT"]]
-     #_(if username
-         [:span.f-w-b.t-a-r
-          (if (not @(subscribe [:mobile?])) [:span.m-r-5 username])
-          [:span.underline.pointer
-           {:style login-style
-            :on-click dispatch-logout}
-           "LOG OUT"]]
-         [:span.pointer.flex.flex-column.align-items-end
-          [:span.orange.underline.f-w-b.m-l-5
-           {:style login-style
-            :on-click dispatch-route-to-login}
-           [:span "LOGIN"]]])]))
+         (when (not mobile?) [:span.m-r-5 display-name])]
+        [:i.fa.m-l-5.fa-caret-down]]
+       [:div#user-menu.shadow.f-w-b
+        {:style user-menu-style
+         :on-click hide-user-menu}
+        [:div.p-10.opacity-5.hover-opacity-full
+         {:on-click dispatch-logout}
+         "LOG OUT"]
+        [:div.p-10.opacity-5.hover-opacity-full
+         {:on-click dispatch-route-to-my-account}
+         "ACCOUNT"]]])))
 
 (defn route-fn [route]
   (fn [e]
@@ -764,7 +748,26 @@
 (defn login-link []
   [:span.underline.f-w-b.m-l-10.pointer.orange
    {:on-click dispatch-route-to-login}
-   "LOGIN"])
+   "Sign in"])
+
+(defn auth-error-page []
+  (let [error @(subscribe [:auth-error])]
+    [:div {:style {:text-align :center :padding "120px 24px"}}
+     [:div {:style {:color orange
+                    :font-weight :bold
+                    :font-size "32px"
+                    :text-transform :uppercase
+                    :text-shadow "1px 2px 1px rgba(0,0,0,0.37)"}}
+      "Sign-in failed"]
+     [:div.m-t-20.main-text-color
+      "We could not start your session. If you use Cloudflare Access, confirm you are signed in and allowed for this site."]
+     (when error
+       [:div.m-t-10.opacity-6 (str error)])
+     [:button.form-button.m-t-30
+      {:style {:height "40px" :width "174px" :font-size "16px" :font-weight "600"}
+       :on-click #(do (dispatch [:clear-auth-error])
+                      (dispatch [:bootstrap-auth]))}
+      "Retry"]]))
 
 (defn verify-success []
   (registration-page

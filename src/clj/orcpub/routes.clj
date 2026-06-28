@@ -42,6 +42,8 @@
             [orcpub.fork.branding :as branding]
             [orcpub.fork.auth :as auth]
             [orcpub.fork.user-data :as user-data]
+            [orcpub.fork.cloudflare-access :as cf-access]
+            [orcpub.fork.user-provision :as user-provision]
             [orcpub.routes.party :as party]
             [orcpub.routes.folder :as folder]
             [hiccup.page :as page]
@@ -291,11 +293,49 @@
                 :else
                 (create-login-response db conn user id))))))
 
-(defn login [{:keys [json-params db] :as request}]
+(defn legacy-auth-disabled [_]
+  {:status 403
+   :body {:message "Password login and registration are disabled. Sign in via Cloudflare Access."
+          :error :legacy-auth-disabled}})
+
+(defn auth-session-error-response [e]
+  (let [data (ex-data e)
+        err (or (:error data) :invalid-cf-access)]
+    {:status 401 :body {:error err}}))
+
+(defn auth-session
+  "Bootstrap app session from Cloudflare Access JWT or dev auth email."
+  [{:keys [db conn] :as request}]
   (try
-    (let [resp (login-response request)]
-      resp)
-    (catch Throwable e (prn "E" e) (throw e))))
+    (case auth/auth-mode
+      :cloudflare
+      (let [token (cf-access/jwt-from-request request)
+            {:keys [email]} (cf-access/verify-jwt token)
+            user (user-provision/find-or-create-user-by-email! conn db email)]
+        (create-login-response db conn user (:db/id user)))
+
+      :dev
+      (if (s/blank? auth/dev-auth-email)
+        {:status 500
+         :body {:error :dev-auth-misconfigured
+                :message "DEV_AUTH_EMAIL must be set when AUTH_MODE=dev"}}
+        (let [user (user-provision/find-or-create-user-by-email! conn db auth/dev-auth-email)]
+          (create-login-response db conn user (:db/id user))))
+
+      :legacy
+      {:status 404
+       :body {:error :auth-session-unavailable
+              :message "Use POST /login when AUTH_MODE=legacy"}})
+    (catch Exception e
+      (auth-session-error-response e))))
+
+(defn login [{:keys [json-params db] :as request}]
+  (if (not= auth/auth-mode :legacy)
+    (legacy-auth-disabled request)
+    (try
+      (let [resp (login-response request)]
+        resp)
+      (catch Throwable e (prn "E" e) (throw e)))))
 
 
 (defn user-for-email [db email]
@@ -343,7 +383,9 @@
                         e))))))
 
 (defn register [{:keys [json-params db conn] :as request}]
-  (let [{:keys [username email password send-updates?]} json-params
+  (if (not= auth/auth-mode :legacy)
+    (legacy-auth-disabled request)
+    (let [{:keys [username email password send-updates?]} json-params
         username (when username (s/trim username))
         email (when email (s/lower-case (s/trim email)))
         password (when password (s/trim password))
@@ -369,7 +411,7 @@
           (when auth/record-last-login-at-registration?
             {:orcpub.user/last-login now})
           (user-data/registration-defaults))))
-      (catch Throwable e (prn e) (throw e)))))
+      (catch Throwable e (prn e) (throw e))))))
 
 (def user-for-verification-key-query
   '[:find ?e
@@ -1427,6 +1469,8 @@
        ["/favicon/*" {:get `get-favicon}]
        [(route-map/path-for route-map/register-route)
         {:post `register}]
+       [(route-map/path-for route-map/auth-session-route)
+        {:get `auth-session}]
        [(route-map/path-for route-map/user-route) ^:interceptors [check-auth]
         {:get `get-user
          :put `update-user-preferences
