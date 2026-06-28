@@ -343,7 +343,7 @@
                       :identity {:user "nonexistent"}})]
           (is (= 400 (:status resp))))))))
 
-(deftest test-user-body-includes-send-updates
+(deftest test-user-body-omits-send-updates
   (with-conn conn
     (let [mocked-conn (dm/fork-conn conn)]
       @(d/transact mocked-conn schema/all-schemas)
@@ -353,5 +353,5 @@
       (let [db (d/db mocked-conn)
             user (routes/user-for-email db "test@test.com")
             body (routes/user-body db user)]
-        (is (true? (:send-updates? body))
-            "user-body should include send-updates? field")))))
+        (is (nil? (:send-updates? body))
+            "fork user-body should not expose send-updates? to the client")))))

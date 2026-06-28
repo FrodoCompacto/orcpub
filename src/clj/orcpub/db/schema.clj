@@ -1,5 +1,6 @@
 (ns orcpub.db.schema
-  (:require [orcpub.modifiers :as mod]
+  (:require [orcpub.fork.schema :as fork-schema]
+            [orcpub.modifiers :as mod]
             [orcpub.entity.strict :as se]
             [orcpub.dnd.e5.character :as char5e]
             [orcpub.dnd.e5.units :as units5e]
@@ -407,6 +408,7 @@
 (def all-schemas
   (concat
    user-schema
+   fork-schema/user-schema
    entity-schema
    entity-type-schema
    character-schema

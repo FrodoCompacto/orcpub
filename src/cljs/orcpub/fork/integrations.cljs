@@ -10,6 +10,7 @@
    Server-side loads third-party scripts in <head>;
    this namespace provides the in-app component hooks."
   (:require [orcpub.fork.branding :as branding]
+            [orcpub.fork.character-ai-export :as character-ai-export]
             [orcpub.route-map :as routes]))
 
 ;; ─── Page View Tracking ─────────────────────────────────────────
@@ -94,6 +95,16 @@
   "Additional content below PDF options. Returns nil by default."
   [_user-tier]
   nil)
+
+;; ─── Export JSON Button ──────────────────────────────────────
+;; AI-readable character JSON download in the export panel.
+
+(defn export-json-button
+  "Button to download a human/AI-readable JSON export of the character."
+  [id built-char plugin-data]
+  [:button.form-button.p-10.m-l-5
+   {:on-click #(character-ai-export/download! id built-char plugin-data)}
+   "Export JSON"])
 
 ;; ─── Share Links ─────────────────────────────────────────────
 ;; Character sharing links. Default provides a single email share.

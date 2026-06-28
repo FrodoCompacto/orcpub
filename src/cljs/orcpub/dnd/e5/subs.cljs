@@ -259,26 +259,6 @@
  (fn [db _]
    (-> db :user-data :user-data :email)))
 
-(reg-sub
- :pending-email
- (fn [db _]
-   (-> db :user-data :user-data :pending-email)))
-
-(reg-sub
- :send-updates?
- (fn [db _]
-   (boolean (-> db :user-data :user-data :send-updates?))))
-
-(reg-sub
- :email-change-sent?
- (fn [db _]
-   (:email-change-sent? db)))
-
-(reg-sub
- :email-change-error
- (fn [db _]
-   (:email-change-error db)))
-
 (defn built-template [template selected-plugin-options]
   template
   #_(let [selected-plugins (map

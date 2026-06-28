@@ -1167,6 +1167,24 @@
     [:.form-button:hover
      {:box-shadow "0 2px 6px 0 rgba(0, 0, 0, 0.5)"}]
 
+    [:.account-action-button
+     {:color :white
+      :font-weight 600
+      :font-size "12px"
+      :border :none
+      :border-radius "5px"
+      :text-transform :uppercase
+      :padding "10px 15px"
+      :cursor :pointer
+      :text-decoration :none
+      :display "inline-block"
+      :background-image "linear-gradient(to bottom, #5a7a9a, #3d5a73)"}]
+
+    [:.account-action-button:hover
+     {:box-shadow "0 2px 6px 0 rgba(0, 0, 0, 0.5)"
+      :color :white
+      :text-decoration :none}]
+
     [:.form-button.disabled
      {:opacity 0.5
       :cursor :not-allowed

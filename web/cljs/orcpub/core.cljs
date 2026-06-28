@@ -4,6 +4,7 @@
             [orcpub.dnd.e5.equipment-subs]
             [orcpub.dnd.e5.events :as events]
             [orcpub.fork.bootstrap-auth]
+            [orcpub.fork.homebrew-sync]
             [orcpub.dnd.e5.autosave-fx :as autosave-fx]
             [orcpub.dnd.e5.views :as views]
             [orcpub.dnd.e5.views-2 :as views-2]

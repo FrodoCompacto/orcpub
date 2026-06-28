@@ -24,7 +24,6 @@
   (cond-> (user-data/enrich-response
            {:username (:orcpub.user/username user)
             :email (:orcpub.user/email user)
-            :send-updates? (boolean (:orcpub.user/send-updates? user))
             :following (following-usernames db (map :db/id (:orcpub.user/following user)))}
            user)
     (:orcpub.user/pending-email user)

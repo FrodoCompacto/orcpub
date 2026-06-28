@@ -43,6 +43,7 @@
             [orcpub.dnd.e5.options :as opt]
             [orcpub.dnd.e5.events :as events]
             [orcpub.fork.integrations :as integrations]
+            [orcpub.fork.homebrew-sync :as homebrew-sync]
             [orcpub.fork.branding :as branding]
             [orcpub.fork.splash :as splash]
             [orcpub.fork.user-tier]
@@ -158,9 +159,6 @@
 (def login-style-menu
   {:background-color "rgba(0,0,0,0.4)"})
 
-(defn dispatch-logout []
-  (dispatch [:logout]))
-
 (defn dispatch-route-to-login [e]
   (.stopPropagation e)
   (dispatch [:route-to-login]))
@@ -232,9 +230,6 @@
        [:div#user-menu.shadow.f-w-b
         {:style user-menu-style
          :on-click hide-user-menu}
-        [:div.p-10.opacity-5.hover-opacity-full
-         {:on-click dispatch-logout}
-         "LOG OUT"]
         [:div.p-10.opacity-5.hover-opacity-full
          {:on-click dispatch-route-to-my-account}
          "ACCOUNT"]]])))
@@ -3768,6 +3763,8 @@
                                       print-character-sheet-style?
                                       print-spell-card-dc-mod?)}
        "Create PDF"]
+      [:div.m-t-10
+       [integrations/export-json-button id built-char plugin-data]]
       [:div.f-s-20.f-w-b.m-b-10.m-t-10 "Other PDFs"]
       [:a.orange {:href "/dnld/5eActionsReferencePage.pdf" :target "_blank"} "5e Actions Reference"]]
      [:span.orange.underline.pointer.uppercase.m-l-10.f-s-12
@@ -7713,12 +7710,14 @@
 (defn my-content []
   [:div.main-text-color
    [:div.flex.justify-cont-end
+    [homebrew-sync/buttons]
     [:button.form-button.m-r-10.m-b-10
      {:on-click (make-event-handler ::char/show-delete-plugin-confirmation)}
      "Delete All"]
     [:button.form-button.m-r-10.m-b-10
      {:on-click (make-event-handler ::e5/export-all-plugins)}
      "Export All"]]
+   [homebrew-sync/modal]
    [:div.flex.justify-cont-end
     (when @(subscribe [::char/delete-plugin-confirmation-shown?])
       [:div.p-20.flex.justify-cont-end
@@ -7753,114 +7752,22 @@
     [my-content]]])
 
 (defn my-account-page []
-    (r/with-let [editing? (r/atom false)
-                 new-email (r/atom "")
-                 confirm-email (r/atom "")]
-      (let [current-email @(subscribe [:email])
-            pending-email @(subscribe [:pending-email])
-            sent? @(subscribe [:email-change-sent?])
-            error @(subscribe [:email-change-error])
-            ;; Client-side validation: format check + confirm match
-            bad-format? (and (seq @new-email)
-                            (registration/bad-email? @new-email))
-            emails-dont-match? (and (seq @confirm-email)
-                                    (not= @new-email @confirm-email))
-            can-submit? (and (seq @new-email)
-                             (not bad-format?)
-                             (= @new-email @confirm-email))]
-        [content-page
-         "My Account"
-         [{:title "Delete Account"
-           :icon "trash"
-           :on-click #(dispatch
-                      [:show-confirmation
-                       {:confirm-button-text "DELETE ACCOUNT"
-                        :question "Are you sure you want to delete your account, characters, and associated data?"
-                        :event [:delete-account]}])}]
-         [:div.f-s-24.p-10.white
-          [:div.p-5
-           [:span.f-w-b "Username: "]
-           [:span @(subscribe [:username])]]
-          [:div.p-5
-           [:span.f-w-b "Email: "]
-           (cond
-             sent?
-             [:div
-              [:span current-email]
-              [:div.m-t-5.f-s-14 "A verification email has been sent to " [:strong pending-email] ". Click the link in that email to confirm the change."]
-              [:button.link-button.m-t-5.f-s-14
-               {:on-click #(do (reset! editing? true)
-                               (reset! new-email "")
-                               (reset! confirm-email "")
-                               (dispatch [:change-email-clear]))}
-               "Change again"]]
-
-             @editing?
-             [:div.m-t-5
-              [:input.input
-               {:type :email
-                :value @new-email
-                :placeholder "New email address"
-                :on-change #(reset! new-email (event-value %))}]
-              (when bad-format?
-                [:div.m-t-5.red "Not a valid email format"])
-              ;; Confirm field to prevent typo-induced lockout
-              [:input.input.m-t-5
-               {:type :email
-                :value @confirm-email
-                :placeholder "Confirm new email address"
-                :on-change #(reset! confirm-email (event-value %))}]
-              (when emails-dont-match?
-                [:div.m-t-5.red "Email addresses don't match"])
-              [:div.m-t-5
-               [:button.form-button
-                {:disabled (not can-submit?)
-                 :on-click #(when can-submit?
-                              (dispatch [:change-email @new-email]))}
-                "Save"]
-               [:button.link-button.m-l-10
-                {:on-click #(do (reset! editing? false)
-                                (reset! new-email "")
-                                (reset! confirm-email "")
-                                (dispatch [:change-email-clear]))}
-                "Cancel"]]
-              (when error
-                [:div.m-t-5.red error])]
-
-             :else
-             [:<>
-              [:span current-email]
-              [:button.link-button.m-l-10
-               {:on-click #(do (reset! editing? true)
-                               (reset! new-email "")
-                               (reset! confirm-email "")
-                               (dispatch [:change-email-clear]))}
-               "Change"]
-              (when pending-email
-                [:div.m-t-5.f-s-14
-                 "Pending: " pending-email " — check your email to verify the change. "
-                 ;; Resend uses the same change-email flow; server enforces 3-zone rate limit
-                 ;; (0–1 min blocked, 1–5 min free resend, 5+ min open)
-                 [:button.link-button.f-s-14
-                  {:on-click #(dispatch [:change-email pending-email])}
-                  "Resend"]
-                 (when error
-                   [:span.m-l-5.red.f-s-14 error])])])]
-          ;; ─── Email Updates Toggle ─────────────────────────────────
-          [:div.p-5
-           [:span.f-w-b "Email Updates: "]
-           (let [send-updates? @(subscribe [:send-updates?])]
-             [:span
-              [:i.fa.fa-check.f-s-14.pointer.m-r-5
-               {:class (if send-updates? "orange" "white")
-                :style {:border-color "#f0a100"
-                        :border-style :solid
-                        :border-width "1px"
-                        :border-bottom-width "3px"}
-                :on-click #(dispatch [:toggle-send-updates (not send-updates?)])}]
-              (if send-updates?
-                (str "Receiving updates from " branding/app-name)
-                "Not receiving updates")])]]])))
+  [content-page
+   "My Account"
+   [{:title "Delete Account"
+     :icon "trash"
+     :on-click #(dispatch
+                [:show-confirmation
+                 {:confirm-button-text "DELETE ACCOUNT"
+                  :question "Are you sure you want to delete your account, characters, and associated data?"
+                  :event [:delete-account]}])}]
+   [:div.f-s-24.p-10.white
+    [:div.p-5
+     [:span.f-w-b "Username: "]
+     [:span @(subscribe [:username])]]
+    [:div.p-5
+     [:span.f-w-b "Email: "]
+     [:span @(subscribe [:email])]]]])
 
 
 (defn newb-character-builder-page []

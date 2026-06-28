@@ -44,6 +44,7 @@
             [orcpub.fork.user-data :as user-data]
             [orcpub.fork.auth-session :as fork-auth-session]
             [orcpub.fork.session :as session]
+            [orcpub.fork.user-homebrew :as fork-user-homebrew]
             [orcpub.routes.party :as party]
             [orcpub.routes.folder :as folder]
             [hiccup.page :as page]
@@ -1144,6 +1145,12 @@
         user (find-user-by-username-or-email db username)]
     {:status 200 :body (user-body db user)}))
 
+(defn get-user-homebrew [request]
+  (fork-user-homebrew/get-homebrew request find-user-by-username))
+
+(defn put-user-homebrew [request]
+  (fork-user-homebrew/put-homebrew request find-user-by-username))
+
 (defn delete-user
   "Deletes the authenticated user's account.
 
@@ -1421,6 +1428,9 @@
          :delete `delete-user}]
        [(route-map/path-for route-map/user-email-route) ^:interceptors [check-auth]
         {:put `request-email-change}]
+       [(route-map/path-for route-map/user-homebrew-route) ^:interceptors [check-auth]
+        {:get `get-user-homebrew
+         :put `put-user-homebrew}]
        [(route-map/path-for route-map/follow-user-route :user ":user") ^:interceptors [check-auth]
         {:post `follow-user
          :delete `unfollow-user}]
