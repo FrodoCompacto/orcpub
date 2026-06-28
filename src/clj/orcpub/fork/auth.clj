@@ -6,11 +6,11 @@
             [orcpub.fork.branding :as branding]))
 
 (defn- env-str [k]
-  (some-> (or (env k) (System/getenv (name k))) str str/trim not-empty))
+  (some-> (or (env k) (System/getenv (name k))) str s/trim not-empty))
 
 (defn- parse-auth-mode []
-  (case (str/lower-case (or (env-str :auth-mode)
-                            (if (= "true" (str/lower-case (or (env :dev-mode) "")))
+  (case (s/lower-case (or (env-str :auth-mode)
+                            (if (= "true" (s/lower-case (or (env :dev-mode) "")))
                               "dev"
                               "cloudflare")))
     "cloudflare" :cloudflare
