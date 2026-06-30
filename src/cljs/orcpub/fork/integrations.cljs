@@ -11,6 +11,7 @@
    this namespace provides the in-app component hooks."
   (:require [orcpub.fork.branding :as branding]
             [orcpub.fork.character-ai-export :as character-ai-export]
+            [orcpub.fork.character-choices-export :as character-choices-export]
             [orcpub.route-map :as routes]))
 
 ;; ─── Page View Tracking ─────────────────────────────────────────
@@ -96,6 +97,22 @@
   [_user-tier]
   nil)
 
+;; ─── AI Assistant ────────────────────────────────────────────
+;; NotebookLM link in Character List / Character Builder headers.
+
+(def ^:private notebooklm-url
+  "https://notebooklm.google.com/notebook/31221937-d34e-48e9-8caf-90ad91290890/preview")
+
+(defn ai-assistant-header-button
+  "Opens NotebookLM in a new tab. Slot for content-page header button-cfgs."
+  []
+  [:a {:class "account-action-button m-l-5 m-t-5 m-b-5"
+       :href notebooklm-url
+       :target "_blank"
+       :rel "noopener noreferrer"}
+   [:i.fa.fa-robot.m-r-5]
+   "Ask the AI Assistant"])
+
 ;; ─── Export JSON Button ──────────────────────────────────────
 ;; AI-readable character JSON download in the export panel.
 
@@ -105,6 +122,13 @@
   [:button.form-button.p-10.m-l-5
    {:on-click #(character-ai-export/download! id built-char plugin-data)}
    "Export JSON"])
+
+(defn export-choices-json-button
+  "Button to download compact builder choices JSON."
+  [id]
+  [:button.form-button.p-10.m-l-5
+   {:on-click #(character-choices-export/download! id)}
+   "Export Choices JSON"])
 
 ;; ─── Share Links ─────────────────────────────────────────────
 ;; Character sharing links. Default provides a single email share.

@@ -2122,7 +2122,8 @@
         (vec (integrations/share-links character-id @(subscribe [::char5e/character-name character-id])))
         [])
       (remove nil?
-       [{:title "Random"
+       [(integrations/ai-assistant-header-button)
+        {:title "Random"
          :icon "random"
          :on-click (confirm-handler
                     character-changed?

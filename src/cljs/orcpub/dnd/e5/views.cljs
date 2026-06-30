@@ -3765,6 +3765,8 @@
        "Create PDF"]
       [:div.m-t-10
        [integrations/export-json-button id built-char plugin-data]]
+      [:div.m-t-5
+       [integrations/export-choices-json-button id]]
       [:div.f-s-20.f-w-b.m-b-10.m-t-10 "Other PDFs"]
       [:a.orange {:href "/dnld/5eActionsReferencePage.pdf" :target "_blank"} "5e Actions Reference"]]
      [:span.orange.underline.pointer.uppercase.m-l-10.f-s-12
@@ -8267,22 +8269,23 @@
     #_(prn (str (count characters) " characters - " user-tier))
 [content-page
      "Characters"
-     [#_(if (>= (count characters) 5) {:title "Free accounts are limited to 5 characters"
-                                       :icon "plus"
-                                       :class-name "cursor-disabled"}
+     (into [(integrations/ai-assistant-header-button)]
+           [#_(if (>= (count characters) 5) {:title "Free accounts are limited to 5 characters"
+                                             :icon "plus"
+                                             :class-name "cursor-disabled"}
+                {:title "New"
+                 :icon "plus"
+                 :on-click #(dispatch [:new-character])})
             {:title "New"
              :icon "plus"
-             :on-click #(dispatch [:new-character])})
-      {:title "New"
-       :icon "plus"
-       :on-click #(dispatch [:new-character])}
-      {:title "Make Party"
-       :icon "users"
-       :class (when (not has-selected?) "opacity-5 cursor-disabled")
-       :on-click (when has-selected? (make-event-handler ::party/make-party selected-ids))}
-      {:title "New Folder"
-       :icon "folder"
-       :on-click #(dispatch [::folder/create-folder])}]
+             :on-click #(dispatch [:new-character])}
+            {:title "Make Party"
+             :icon "users"
+             :class (when (not has-selected?) "opacity-5 cursor-disabled")
+             :on-click (when has-selected? (make-event-handler ::party/make-party selected-ids))}
+            {:title "New Folder"
+             :icon "folder"
+             :on-click #(dispatch [::folder/create-folder])}])
      [:div.p-5
       [character-filter-bar]
       [:div
