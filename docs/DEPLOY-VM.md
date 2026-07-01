@@ -150,11 +150,68 @@ docker compose restart orcpub
 ## Atualizar após `git pull`
 
 ```bash
-cd /opt/orcpub-app
+cd /opt/orcpub-app/orcpub   # ajuste se o clone estiver em outro path
 git pull
-docker compose build
-docker compose up -d
+./scripts/vm-deploy.sh build
+./scripts/vm-deploy.sh up
 ```
+
+Confirme na VM que o código novo está sendo servido:
+
+```bash
+curl -sk https://127.0.0.1:8843/health
+curl -sk https://127.0.0.1:8843/js/compiled/orcpub.js | grep -c "Export Choices JSON"
+```
+
+Se o `grep` encontrar o texto na VM mas o browser em `https://dmv.frodo.cloud` ainda
+mostrar a versão antiga, o deploy funcionou — falta **purge do cache Cloudflare**
+(ver seção abaixo) e hard refresh no browser (`Ctrl+Shift+R` ou aba anônima).
+
+O JS/CSS são servidos em URLs fixas (`/js/compiled/orcpub.js`, etc.) sem hash na
+URL, então browser e edge da Cloudflare seguram a versão antiga com facilidade.
+
+## Cache Cloudflare (purge após deploy)
+
+O **Zero Trust** (Access) controla autenticação; o **purge de cache** fica no painel
+do **domínio** (`frodo.cloud`), em **Caching** — não confundir com Zero Trust.
+
+### Purge por URL (recomendado após deploy de frontend)
+
+Use quando só mudou código Clojure/CLJS e o resto do site pode continuar em cache.
+
+1. Acesse [dash.cloudflare.com](https://dash.cloudflare.com) e faça login.
+2. Selecione o domínio **`frodo.cloud`**.
+3. Menu lateral: **Caching** → **Configuration**.
+4. Em **Purge Cache**, clique **Custom Purge** → **Purge by URL**.
+5. Cole as URLs (uma por linha ou conforme o formulário permitir):
+
+```
+https://dmv.frodo.cloud/js/compiled/orcpub.js
+https://dmv.frodo.cloud/css/compiled/styles.css
+```
+
+6. Confirme com **Purge**.
+
+Depois: hard refresh no browser (`Ctrl+Shift+R`) ou aba anônima em
+`https://dmv.frodo.cloud`.
+
+### Purge total
+
+Use se o purge por URL não resolver ou se não tiver certeza de quais assets mudaram.
+
+Mesmo caminho: **Caching** → **Configuration** → **Purge Cache** → **Purge Everything**.
+
+Isso limpa **todo** o cache do domínio na edge. Mais agressivo; só use quando necessário.
+
+### Atalho no dashboard
+
+Com o domínio `frodo.cloud` selecionado, a configuração de cache fica em:
+
+```
+https://dash.cloudflare.com/<account-id>/frodo.cloud/caching/configuration
+```
+
+O `<account-id>` varia por conta; o menu é sempre **Caching → Configuration**.
 
 ## Backup
 
@@ -175,6 +232,7 @@ Com a stack **parada** ou via ferramenta de backup:
 | orcpub `unhealthy` | `docker compose logs orcpub` — esperar 2–3 min; checar `DATOMIC_PASSWORD` |
 | Build OOM | `free -h`; considerar swap temporário ou build local + push de imagem |
 | Login falha | `SIGNATURE` mudou? Recriar sessão; `./docker-user.sh check admin` |
+| Site não atualiza após deploy | Na VM: `curl` + `grep` no JS (seção acima). Se OK na VM: [purge Cloudflare](#cache-cloudflare-purge-após-deploy) + hard refresh |
 
 ## Autenticação (Cloudflare Access SSO)
 

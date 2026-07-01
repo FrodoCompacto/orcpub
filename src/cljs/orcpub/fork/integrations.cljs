@@ -106,12 +106,10 @@
 (defn ai-assistant-header-button
   "Opens NotebookLM in a new tab. Slot for content-page header button-cfgs."
   []
-  [:a {:class "account-action-button h-40 flex align-items-c m-l-5 m-t-5 m-b-5"
-       :href notebooklm-url
-       :target "_blank"
-       :rel "noopener noreferrer"}
-   [:i.fa.fa-robot.f-s-18.m-r-5]
-   "Ask the AI Assistant"])
+  [:button.form-button.h-40.m-l-5.m-t-5.m-b-5
+   {:on-click #(.open js/window notebooklm-url "_blank")}
+   [:span [:i.fa.f-s-18.fa-robot]]
+   [:span.m-l-5.header-button-text "Ask the AI Assistant"]])
 
 ;; ─── Export JSON Button ──────────────────────────────────────
 ;; AI-readable character JSON download in the export panel.
