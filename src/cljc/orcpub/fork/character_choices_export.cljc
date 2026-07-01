@@ -8,7 +8,6 @@
             [orcpub.dnd.e5.character :as char5e]
             [orcpub.dnd.e5.character.equipment :as equip]
             #?(:cljs [cljsjs.filesaverjs])
-            #?(:cljs [orcpub.dnd.e5.character :as char5e])
             #?(:cljs [re-frame.core :refer [dispatch subscribe]])))
 
 (def ^:private format-version 1)
@@ -173,6 +172,14 @@
      (defn- clj->json [data]
        (.stringify js/JSON (clj->js data)))
 
+     (defn- character-for-export [id]
+       (if id
+         @(subscribe [::char5e/character id])
+         @(subscribe [:character])))
+
+     (defn- choices-json-string [character]
+       (clj->json (make-choices-export character)))
+
      (defn- sanitize-filename [name]
        (-> (or name "character")
            (s/replace #"[^\w\s\-]" "")
@@ -182,15 +189,20 @@
      (defn download!
        "Download compact choices JSON for the given character id."
        [id]
-       (let [character (if id
-                         @(subscribe [::char5e/character id])
-                         @(subscribe [:character]))
-             data (make-choices-export character)
+       (let [character (character-for-export id)
              name (or (get-in character [::entity/values ::char5e/character-name])
                       "character")
              filename (str (sanitize-filename name) "-choices.json")
              blob (js/Blob.
-                   (clj->js [(clj->json data)])
+                   (clj->js [(choices-json-string character)])
                    (clj->js {:type "application/json;charset=utf-8"}))]
          (js/saveAs blob filename)
-         (dispatch [:orcpub.dnd.e5.character/hide-options])))))
+         (dispatch [:orcpub.dnd.e5.character/hide-options])))
+
+     (defn copy!
+       "Copy compact choices JSON to the clipboard."
+       [id]
+       (let [json (choices-json-string (character-for-export id))]
+         (-> (.writeText js/navigator.clipboard json)
+             (.then #(dispatch [:show-message "Copied to clipboard."]))
+             (.catch #(dispatch [:show-error-message "Could not copy to clipboard."])))))))

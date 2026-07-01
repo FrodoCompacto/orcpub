@@ -106,11 +106,11 @@
 (defn ai-assistant-header-button
   "Opens NotebookLM in a new tab. Slot for content-page header button-cfgs."
   []
-  [:a {:class "account-action-button m-l-5 m-t-5 m-b-5"
+  [:a {:class "account-action-button h-40 flex align-items-c m-l-5 m-t-5 m-b-5"
        :href notebooklm-url
        :target "_blank"
        :rel "noopener noreferrer"}
-   [:i.fa.fa-robot.m-r-5]
+   [:i.fa.fa-robot.f-s-18.m-r-5]
    "Ask the AI Assistant"])
 
 ;; ─── Export JSON Button ──────────────────────────────────────
@@ -124,11 +124,16 @@
    "Export JSON"])
 
 (defn export-choices-json-button
-  "Button to download compact builder choices JSON."
+  "Button to download compact builder choices JSON, with clipboard copy."
   [id]
-  [:button.form-button.p-10.m-l-5
-   {:on-click #(character-choices-export/download! id)}
-   "Export Choices JSON"])
+  [:div.flex.align-items-c
+   [:button.form-button.p-10.m-l-5
+    {:on-click #(character-choices-export/download! id)}
+    "Export Choices JSON"]
+   [:button.form-button.p-10.m-l-5
+    {:title "Copy choices JSON to clipboard"
+     :on-click #(character-choices-export/copy! id)}
+    [:i.fa.fa-clipboard]]])
 
 ;; ─── Share Links ─────────────────────────────────────────────
 ;; Character sharing links. Default provides a single email share.
