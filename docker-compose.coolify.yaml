@@ -1,6 +1,8 @@
 services:
   orcpub:
     image: orcpub-app
+    expose:
+      - "8890"
     build:
       context: .
       dockerfile: docker/Dockerfile
