@@ -6,44 +6,37 @@
   All operations include error handling with clear error messages."
   (:require [com.stuartsierra.component :as component]
             [datomic.api :as d]
+            [clojure.string :as str]
             [orcpub.db.schema :as schema]))
+
+(defn- redact-uri-query [uri]
+  (when uri
+    (str/replace uri #"(?i)\?.*$" "?[REDACTED]")))
 
 (defrecord DatomicComponent [uri conn]
   component/Lifecycle
   (start [this]
     (if (:conn this)
       this
-      (try
+      (do
         (when (nil? uri)
           (throw (ex-info "Database URI is required but not configured"
                           {:error :missing-db-uri})))
 
-        (println "Creating/connecting to Datomic database:" uri)
-        (d/create-database uri)
-
-        (let [connection (try
-                           (d/connect uri)
-                           (catch Exception e
-                             (throw (ex-info "Failed to connect to Datomic database. Please verify the database URI and that Datomic is running."
-                                             {:error :db-connection-failed
-                                              :uri uri}
-                                             e))))]
+        (let [safe-uri (redact-uri-query uri)]
           (try
-            @(d/transact connection schema/all-schemas)
-            (println "Successfully initialized database schema")
+            (println "Creating/connecting to Datomic database:" safe-uri)
+            (d/create-database uri)
+
+            (let [connection (d/connect uri)]
+              @(d/transact connection schema/all-schemas)
+              (println "Successfully initialized database schema")
+              (assoc this :conn connection))
             (catch Exception e
-              (throw (ex-info "Failed to initialize database schema. The database may be in an inconsistent state."
-                              {:error :schema-initialization-failed
-                               :uri uri}
-                              e))))
-          (assoc this :conn connection))
-        (catch clojure.lang.ExceptionInfo e
-          (throw e))
-        (catch Exception e
-          (throw (ex-info "Unexpected error during database initialization"
-                          {:error :db-init-failed
-                           :uri uri}
-                          e))))))
+              (throw (ex-info "Datomic initialization failed. Check the transactor and database configuration."
+                              {:error :db-init-failed
+                               :uri safe-uri
+                               :cause-class (.getName (class e))}))))))))
   (stop [this]
     (assoc this :conn nil)))
 

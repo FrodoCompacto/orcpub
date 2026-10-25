@@ -37,7 +37,7 @@
           (with-redefs [auth/dev-auth-username "custom"]
             (let [db (d/db mocked-conn)
                   user (provision/find-or-create-user-by-email! mocked-conn db "other@example.com")]
-              (is (= "custom" (:orcpub.user/username user)))))))))
+              (is (= "custom" (:orcpub.user/username user))))))))))
 
 (deftest username-collision-suffix
   (with-conn conn

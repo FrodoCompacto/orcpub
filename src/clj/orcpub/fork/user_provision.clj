@@ -62,8 +62,10 @@
                                          {:error :username-allocation-failed
                                           :email normalized})))
             random-pw (str (random-uuid) (random-uuid))
+            tempid (str (random-uuid))
             now (java.util.Date.)
-            tx [(merge {:orcpub.user/email normalized
+            tx [(merge {:db/id tempid
+                        :orcpub.user/email normalized
                         :orcpub.user/username username
                         :orcpub.user/password (hashers/derive random-pw)
                         :orcpub.user/verified? true
@@ -71,5 +73,5 @@
                         :orcpub.user/created now}
                        (user-data/registration-defaults))]]
         (let [result @(d/transact conn tx)
-              id (get-in result [:tempids username])]
+              id (get-in result [:tempids tempid])]
           (d/pull (d/db conn) '[*] id))))))
