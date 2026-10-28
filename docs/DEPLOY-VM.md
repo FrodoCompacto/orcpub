@@ -246,7 +246,7 @@ O app **não usa mais tela de login/registro**. Sessão é criada automaticament
 5. O browser recebe o JWT interno do app (`SIGNATURE`) para chamadas à API.
 
 **Nunca** confie só em `CF-Access-Authenticated-User-Email` — identidade vem do JWT
-validado.
+validado. O `iss` deve ser exatamente `https://<CF_ACCESS_TEAM_DOMAIN>`; `exp` é obrigatório, numérico e deve estar no futuro. Tokens sem expiração são rejeitados.
 
 ### Variáveis no `.env` de produção
 

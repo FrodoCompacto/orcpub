@@ -1,16 +1,19 @@
 (ns orcpub.fork.cloudflare-access-test
-  (:require [buddy.core.keys :as keys]
-            [buddy.sign.jwt :as jwt]
+  (:require [buddy.sign.jwt :as jwt]
             [clojure.data.json :as json]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [orcpub.fork.auth :as auth]
             [orcpub.fork.cloudflare-access :as cf-access])
-  (:import (java.util UUID)))
+  (:import (clojure.lang ExceptionInfo)
+           (java.security KeyPairGenerator)))
 
 (def test-team "testteam.cloudflareaccess.com")
 (def test-aud "test-application-audience-tag")
 
-(def ^:private test-keypair (keys/generate-keypair :rsa 2048))
+(def ^:private test-keypair
+  (let [generator (KeyPairGenerator/getInstance "RSA")]
+    (.initialize generator 2048)
+    (.generateKeyPair generator)))
 (def ^:private test-private-key (.getPrivate test-keypair))
 (def ^:private test-public-key (.getPublic test-keypair))
 
@@ -52,8 +55,62 @@
                                   :aud test-aud
                                   :iss (str "https://" test-team)
                                   :exp (- (quot (System/currentTimeMillis) 1000) 60)})]
-      (is (thrown-with-msg? ExceptionInfo #"expired"
-                            (cf-access/verify-jwt token))))))
+      (is (= :invalid-cf-access
+             (try (cf-access/verify-jwt token)
+                  nil
+                  (catch ExceptionInfo e (:error (ex-data e)))))))))
+
+(defn- valid-claims []
+  {:email "player@example.com"
+   :aud test-aud
+   :iss (str "https://" test-team)
+   :exp (+ (quot (System/currentTimeMillis) 1000) 3600)})
+
+(defn- rejection-error [claims]
+  (try
+    (cf-access/verify-jwt (sign-test-token claims))
+    nil
+    (catch ExceptionInfo e (:error (ex-data e)))))
+
+(deftest verify-jwt-requires-exact-issuer
+  (doseq [issuer [nil test-team (str "http://" test-team)
+                  (str "https://" test-team ".attacker.example")
+                  (str "https://attacker.example/" test-team)
+                  (str "https://prefix-" test-team)
+                  (str "https://" test-team "/")]]
+    (testing (str "rejects issuer " (pr-str issuer))
+      (is (= :invalid-cf-access
+             (rejection-error (assoc (valid-claims) :iss issuer)))))))
+
+(deftest verify-jwt-requires-expiration
+  (testing "rejects missing expiration"
+    (is (= :invalid-cf-access (rejection-error (dissoc (valid-claims) :exp)))))
+  (doseq [expiration [nil false "9999999999" "invalid" [] {}]]
+    (testing (str "rejects invalid expiration " (pr-str expiration))
+      (is (= :invalid-cf-access
+             (rejection-error (assoc (valid-claims) :exp expiration))))))
+  (testing "rejects expiration equal to the current second"
+    (is (= :invalid-cf-access
+           (rejection-error (assoc (valid-claims) :exp
+                                   (quot (System/currentTimeMillis) 1000)))))))
+
+(deftest verify-jwt-preserves-other-validations
+  (testing "accepts an audience list containing the expected audience"
+    (is (= "player@example.com"
+           (:email (cf-access/verify-jwt
+                    (sign-test-token (assoc (valid-claims) :aud ["other" test-aud])))))))
+  (testing "rejects a token that is not valid yet"
+    (is (= :invalid-cf-access
+           (rejection-error (assoc (valid-claims) :nbf
+                                   (+ (quot (System/currentTimeMillis) 1000) 3600))))))
+  (testing "rejects a signature made by an untrusted key"
+    (let [other-key (.getPrivate (.generateKeyPair (KeyPairGenerator/getInstance "RSA")))
+          token (jwt/sign (valid-claims) other-key {:alg :rs256})]
+      (is (thrown-with-msg? ExceptionInfo #"signature" (cf-access/verify-jwt token))))))
+
+(deftest verify-jwt-requires-team-configuration
+  (with-redefs [auth/cf-access-team-domain nil]
+    (is (= :cf-access-misconfigured (rejection-error (valid-claims))))))
 
 (deftest email-from-claims-fallback
   (testing "falls back to common_name when email absent"

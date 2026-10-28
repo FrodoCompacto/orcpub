@@ -100,7 +100,7 @@
 
 (defn- iss-valid? [iss]
   (and (string? iss)
-       (str/includes? (str iss) auth/cf-access-team-domain)))
+       (= iss (str "https://" auth/cf-access-team-domain))))
 
 (defn email-from-claims
   "Extract email from verified JWT claims."
@@ -118,6 +118,9 @@
                     {:error :cf-access-required})))
   (when (str/blank? auth/cf-access-aud)
     (throw (ex-info "CF_ACCESS_AUD not configured"
+                    {:error :cf-access-misconfigured})))
+  (when (str/blank? auth/cf-access-team-domain)
+    (throw (ex-info "CF_ACCESS_TEAM_DOMAIN not configured"
                     {:error :cf-access-misconfigured})))
   (let [keys (fetch-public-keys!)
         claims (some (fn [pk]
@@ -138,7 +141,10 @@
                        :iss (:iss claims)})))
     (let [exp (:exp claims)
           now (/ (System/currentTimeMillis) 1000)]
-      (when (and exp (>= now exp))
+      (when-not (and (number? exp) (Double/isFinite (double exp)))
+        (throw (ex-info "Cloudflare Access JWT missing or invalid expiration"
+                        {:error :invalid-cf-access})))
+      (when (>= now exp)
         (throw (ex-info "Cloudflare Access JWT expired"
                         {:error :invalid-cf-access}))))
     (let [email (some-> (email-from-claims claims) str/trim str/lower-case)]
